@@ -8,3 +8,6 @@ updates:
     directory: /
     schedule: { interval: monthly }
     groups: { python: { patterns: ["*"] } }
+  - package-ecosystem: pre-commit
+    directory: /
+    schedule: { interval: monthly }
