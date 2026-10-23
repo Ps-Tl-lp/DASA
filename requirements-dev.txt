@@ -1,0 +1,3 @@
+# Exact pins. Bump a version in its own chore/ PR.
+pytest==9.1.1
+ruff==0.17.2
