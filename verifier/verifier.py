@@ -1,9 +1,8 @@
 import argparse
-from bisect import bisect_right
 import json
 import math
+from bisect import bisect_right
 from pathlib import Path
-
 
 PASS, FAIL, INCONCLUSIVE = "PASS", "FAIL", "INCONCLUSIVE"
 DEFAULT_MAX_GAP = 1.0  # seconds; also bounds launch-position age
@@ -18,7 +17,11 @@ def finite(value):
     Args: value (object), the value to inspect.
     Returns: bool, True for a finite int or float.
     """
-    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+    return (
+        isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and math.isfinite(value)
+    )
 
 
 def coordinates(lat, lon):
@@ -41,7 +44,9 @@ def distance_m(lat1, lon1, lat2, lon2):
     latitude2 = math.radians(lat2)
     longitude_change = math.radians(lon2 - lon1)
     haversine = math.sin((latitude2 - latitude1) / 2) ** 2
-    haversine += math.cos(latitude1) * math.cos(latitude2) * math.sin(longitude_change / 2) ** 2
+    haversine += (
+        math.cos(latitude1) * math.cos(latitude2) * math.sin(longitude_change / 2) ** 2
+    )
     return 6371000.0 * 2 * math.asin(math.sqrt(min(1.0, max(0.0, haversine))))
 
 
@@ -60,8 +65,14 @@ def parse_waypoint(item, order, issues):
         issues.append(f"Item {order}: waypoint params are incomplete")
         return None
 
-    waypoint = dict(order=order, frame=item.get("frame"), dwell=params[0],
-                    lat=params[4], lon=params[5], alt=params[6])
+    waypoint = dict(
+        order=order,
+        frame=item.get("frame"),
+        dwell=params[0],
+        lat=params[4],
+        lon=params[5],
+        alt=params[6],
+    )
     if not coordinates(waypoint["lat"], waypoint["lon"]):
         issues.append(f"Item {order}: waypoint coordinates are unspecified or invalid")
     if not finite(waypoint["alt"]):
@@ -73,7 +84,9 @@ def parse_waypoint(item, order, issues):
     if item.get("autoContinue", True) is not True:
         issues.append(f"Item {order}: manual continuation is unsupported")
     if params[2] not in (None, 0):
-        issues.append(f"Item {order}: nonzero pass radius/fly-through behavior is unsupported")
+        issues.append(
+            f"Item {order}: nonzero pass radius/fly-through behavior is unsupported"
+        )
     return waypoint
 
 
@@ -95,7 +108,9 @@ def parse_mission(plan):
     home = mission.get("plannedHomePosition")
     if not isinstance(home, list) or len(home) < 2 or not coordinates(*home[:2]):
         home = None
-        issues.append("plannedHomePosition latitude/longitude is unspecified or invalid")
+        issues.append(
+            "plannedHomePosition latitude/longitude is unspecified or invalid"
+        )
     items = mission.get("items", [])
     if not isinstance(items, list):
         raise ValueError("mission.items must be a list")
@@ -103,7 +118,9 @@ def parse_mission(plan):
     terminal_command = None
     for order, item in enumerate(items, 1):
         if not isinstance(item, dict) or item.get("type") != "SimpleItem":
-            issues.append(f"Item {order}: ComplexItem or unknown item pattern is unsupported")
+            issues.append(
+                f"Item {order}: ComplexItem or unknown item pattern is unsupported"
+            )
             continue
         command = item.get("command")
         if terminal:
@@ -114,9 +131,13 @@ def parse_mission(plan):
                 waypoints.append(waypoint)
         elif command == 22:
             # Takeoff params[0] is pitch, NOT hold time. No takeoff-altitude check.
-            takeoffs.append(dict(order=order, frame=item.get("frame"), params=item.get("params")))
+            takeoffs.append(
+                dict(order=order, frame=item.get("frame"), params=item.get("params"))
+            )
             if len(takeoffs) > 1 or waypoints:
-                issues.append(f"Item {order}: multiple or mid-mission takeoffs are unsupported")
+                issues.append(
+                    f"Item {order}: multiple or mid-mission takeoffs are unsupported"
+                )
             if item.get("frame") not in (0, 3):
                 issues.append(f"Item {order}: unsupported takeoff altitude frame")
         elif command in (20, 21):
@@ -149,6 +170,7 @@ def load_log(path):
     Raises: ImportError if pyulog is unavailable; ValueError on read/parse errors.
     """
     from pyulog import ULog
+
     try:
         # Own the stream so parser errors cannot leave a file handle open.
         with Path(path).open("rb") as stream:
@@ -220,7 +242,10 @@ def extract_telemetry(ulog):
     """
     groundtruth = topic_rows(ulog, "vehicle_global_position_groundtruth")
     if any(position_valid(row) for row in groundtruth):
-        positions, source = groundtruth, "vehicle_global_position_groundtruth (simulator ground truth)"
+        positions, source = (
+            groundtruth,
+            "vehicle_global_position_groundtruth (simulator ground truth)",
+        )
     else:
         positions = topic_rows(ulog, "vehicle_global_position")
         source = "vehicle_global_position (ESTIMATED telemetry)"
@@ -260,10 +285,14 @@ def flight_window(telemetry, max_gap):
     if not land or any(row.get("landed") not in (0, 1) for row in land):
         return None, None, "Missing/invalid vehicle_land_detected evidence"
     if land[0]["landed"] != 1:
-        return None, None, "Recording begins airborne; launch or earlier flight is unknown"
+        return (
+            None,
+            None,
+            "Recording begins airborne; launch or earlier flight is unknown",
+        )
     takeoff_times = []
     has_gap = False
-    for previous, current in zip(land, land[1:]):
+    for previous, current in zip(land, land[1:], strict=False):
         if previous["landed"] == 1 and current["landed"] == 0:
             takeoff_times.append(current["t"])
         if current["t"] - previous["t"] > max_gap:
@@ -279,7 +308,7 @@ def flight_window(telemetry, max_gap):
         return None, None, "Invalid arming evidence"
     arming_count = 0
     disarms = []
-    for previous, current in zip(armed, armed[1:]):
+    for previous, current in zip(armed, armed[1:], strict=False):
         if previous["armed"] == 0 and current["armed"] == 1:
             arming_count += 1
         if previous["armed"] == 1 and current["armed"] == 0 and current["t"] > start:
@@ -289,8 +318,12 @@ def flight_window(telemetry, max_gap):
     end = min(ends + disarms, default=None)
     active = [r for r in telemetry["mission"] if start <= r["t"] <= (end or math.inf)]
     ids = {r["mission_id"] for r in active if r.get("valid") == 1 and "mission_id" in r}
-    sequences = [r["seq_current"] for r in active if r.get("valid") == 1 and "seq_current" in r]
-    if len(ids) > 1 or any(b < a for a, b in zip(sequences, sequences[1:])):
+    sequences = [
+        r["seq_current"] for r in active if r.get("valid") == 1 and "seq_current" in r
+    ]
+    if len(ids) > 1 or any(
+        b < a for a, b in zip(sequences, sequences[1:], strict=False)
+    ):
         return None, None, "Mission change/restart detected; execution is ambiguous"
     return start, end, None
 
@@ -301,7 +334,8 @@ def flight_window(telemetry, max_gap):
 def check_launch(mission, positions, start, tolerance, max_gap):
     """Compare the last pre-takeoff position with planned home.
 
-    Args: mission (dict), parsed home coordinates; positions (list[dict]), time-ordered rows;
+    Args: mission (dict), parsed home coordinates;
+        positions (list[dict]), time-ordered rows;
         start (float | None), takeoff time in seconds since system start;
         tolerance (int | float), allowed horizontal error in meters;
         max_gap (int | float), maximum pre-takeoff position age in seconds.
@@ -309,14 +343,26 @@ def check_launch(mission, positions, start, tolerance, max_gap):
         gives INCONCLUSIVE.
     """
     if mission["home"] is None or start is None:
-        return result(INCONCLUSIVE, "Expected launch location or unique takeoff is unavailable")
+        return result(
+            INCONCLUSIVE, "Expected launch location or unique takeoff is unavailable"
+        )
     preceding = [row for row in positions if row["t"] < start]
     row = preceding[-1] if preceding else None
-    if row is None or not position_valid(row, altitude=False) or start - row["t"] > max_gap:
-        return result(INCONCLUSIVE, "No sufficiently recent valid position immediately before takeoff")
+    if (
+        row is None
+        or not position_valid(row, altitude=False)
+        or start - row["t"] > max_gap
+    ):
+        return result(
+            INCONCLUSIVE,
+            "No sufficiently recent valid position immediately before takeoff",
+        )
     error = distance_m(row["lat"], row["lon"], *mission["home"][:2])
-    return result(PASS if error <= tolerance else FAIL,
-                  f"distance={error:.2f} m, tolerance={tolerance:g} m, t={row['t']:.3f} s; takeoff={start:.3f} s")
+    return result(
+        PASS if error <= tolerance else FAIL,
+        f"distance={error:.2f} m, tolerance={tolerance:g} m, "
+        f"t={row['t']:.3f} s; takeoff={start:.3f} s",
+    )
 
 
 def home_altitude(homes, timestamp):
@@ -331,7 +377,9 @@ def home_altitude(homes, timestamp):
     if index < 0:
         return None
     row = homes[index]
-    return row.get("alt") if row.get("valid_alt") == 1 and finite(row.get("alt")) else None
+    return (
+        row.get("alt") if row.get("valid_alt") == 1 and finite(row.get("alt")) else None
+    )
 
 
 def target_altitude(wp, homes, timestamp):
@@ -348,7 +396,9 @@ def target_altitude(wp, homes, timestamp):
     return None if home is None else home + wp["alt"]
 
 
-def check_waypoint(wp, samples, homes, horizontal, vertical, max_gap, complete, data_ok):
+def check_waypoint(
+    wp, samples, homes, horizontal, vertical, max_gap, complete, data_ok
+):
     """Search forward for arrival, simultaneous altitude match, and dwell.
 
     Args: wp (dict), validated lat/lon (degrees), alt (meters), frame, dwell (seconds);
@@ -377,7 +427,9 @@ def check_waypoint(wp, samples, homes, horizontal, vertical, max_gap, complete, 
         best_horizontal = min(best_horizontal, horizontal_error)
         within_horizontal = horizontal_error <= horizontal
         if within_horizontal and arrival is None:
-            arrival = result(PASS, f"t={timestamp:.3f} s, horizontal error={horizontal_error:.2f} m")
+            arrival = result(
+                PASS, f"t={timestamp:.3f} s, horizontal error={horizontal_error:.2f} m"
+            )
 
         target = target_altitude(wp, homes, timestamp)
         if not position_valid(row) or target is None:
@@ -390,18 +442,28 @@ def check_waypoint(wp, samples, homes, horizontal, vertical, max_gap, complete, 
         inside = within_horizontal and vertical_error <= vertical
 
         # A gap or changed home reference breaks continuous dwell evidence.
-        if previous_time is not None and (timestamp - previous_time > max_gap or target != previous_target):
+        if previous_time is not None and (
+            timestamp - previous_time > max_gap or target != previous_target
+        ):
             hold_start = None
             uncertain = True
         if inside:
             if altitude is None:
-                altitude = result(PASS, f"t={timestamp:.3f} s, vertical error={vertical_error:.2f} m, target={target:.2f} m MSL")
+                altitude = result(
+                    PASS,
+                    f"t={timestamp:.3f} s, vertical error={vertical_error:.2f} m, "
+                    f"target={target:.2f} m MSL",
+                )
             if hold_start is None:
                 hold_start = timestamp
             current_dwell = timestamp - hold_start
             achieved_dwell = max(achieved_dwell, current_dwell)
             if current_dwell >= wp["dwell"]:
-                dwell = result(PASS, f"achieved={current_dwell:.3f} s, required={wp['dwell']:g} s, t={hold_start:.3f}..{timestamp:.3f} s")
+                dwell = result(
+                    PASS,
+                    f"achieved={current_dwell:.3f} s, required={wp['dwell']:g} s, "
+                    f"t={hold_start:.3f}..{timestamp:.3f} s",
+                )
                 return dict(arrival=arrival, altitude=altitude, dwell=dwell), index
         else:
             hold_start = None
@@ -410,13 +472,26 @@ def check_waypoint(wp, samples, homes, horizontal, vertical, max_gap, complete, 
 
     # An unobserved requirement is a failure only with complete, valid evidence.
     status = FAIL if complete and not uncertain else INCONCLUSIVE
-    why = "ended flight with valid coverage" if status == FAIL else "incomplete recording, invalid data, gap, or missing altitude reference"
-    arrival = arrival or result(status, f"No ordered arrival; nearest={best_horizontal:.2f} m; {why}")
-    altitude = altitude or result(status, f"No simultaneous horizontal/altitude match; best vertical error inside horizontal region={best_vertical:.2f} m; {why}")
+    why = (
+        "ended flight with valid coverage"
+        if status == FAIL
+        else "incomplete recording, invalid data, gap, or missing altitude reference"
+    )
+    arrival = arrival or result(
+        status, f"No ordered arrival; nearest={best_horizontal:.2f} m; {why}"
+    )
+    altitude = altitude or result(
+        status,
+        "No simultaneous horizontal/altitude match; "
+        f"best vertical error inside horizontal region={best_vertical:.2f} m; {why}",
+    )
     if wp["dwell"] == 0:
         dwell = result(PASS, "Zero dwell: no hold required")
     else:
-        dwell = result(status, f"achieved={achieved_dwell:.3f} s, required={wp['dwell']:g} s; {why}")
+        dwell = result(
+            status,
+            f"achieved={achieved_dwell:.3f} s, required={wp['dwell']:g} s; {why}",
+        )
     return dict(arrival=arrival, altitude=altitude, dwell=dwell), None
 
 
@@ -426,7 +501,9 @@ def unknown_waypoint(reason):
     Args: reason (str), shared explanation.
     Returns: dict containing arrival, altitude, and dwell result dictionaries.
     """
-    return {name: result(INCONCLUSIVE, reason) for name in ("arrival", "altitude", "dwell")}
+    return {
+        name: result(INCONCLUSIVE, reason) for name in ("arrival", "altitude", "dwell")
+    }
 
 
 def has_position_coverage(samples, start, end, max_gap):
@@ -444,7 +521,7 @@ def has_position_coverage(samples, start, end, max_gap):
         return False
     if end - samples[-1]["t"] > max_gap:
         return False
-    for previous, current in zip(samples, samples[1:]):
+    for previous, current in zip(samples, samples[1:], strict=False):
         if current["t"] - previous["t"] > max_gap:
             return False
     return True
@@ -464,7 +541,9 @@ def find_waypoint_exit(waypoint, samples, cursor, homes, horizontal, vertical):
         target = target_altitude(waypoint, homes, row["t"])
         if not position_valid(row) or target is None:
             continue
-        horizontal_error = distance_m(row["lat"], row["lon"], waypoint["lat"], waypoint["lon"])
+        horizontal_error = distance_m(
+            row["lat"], row["lon"], waypoint["lat"], waypoint["lon"]
+        )
         vertical_error = abs(row["alt"] - target)
         if horizontal_error > horizontal or vertical_error > vertical:
             return index
@@ -578,13 +657,15 @@ def verify(mission, telemetry, launch_tolerance, horizontal_tolerance, altitude_
            max_gap=DEFAULT_MAX_GAP, home_radius=0.1, landed_band=0.1, landed_hold=3.5, rtl_early_tolerance=0.2):
     """Run the four selected requirements and combine their verdicts.
 
-    Args: mission (dict), parsed requirements; telemetry (dict), extracted observations;
+    Args: mission (dict), parsed requirements;
+        telemetry (dict), extracted observations;
         launch_tolerance, horizontal_tolerance, altitude_tolerance (int | float),
         allowed launch/waypoint/altitude errors in meters;
         max_gap (int | float, optional), sample gap/launch age in seconds; default 1.
     Returns: dict with source, launch, ordered waypoints, issues, and overall.
         Verdict priority is FAIL, then INCONCLUSIVE, then PASS.
-    Raises: ValueError for negative/nonfinite tolerances or a nonpositive/nonfinite gap.
+    Raises: ValueError for negative/nonfinite tolerances or a
+        nonpositive/nonfinite gap.
     """
     for value in (launch_tolerance, horizontal_tolerance, altitude_tolerance, max_gap):
         if not finite(value) or value < 0:
@@ -600,40 +681,77 @@ def verify(mission, telemetry, launch_tolerance, horizontal_tolerance, altitude_
     if ambiguity:
         issues.append(ambiguity)
     if end is None:
-        issues.append("Flight end not established by landing/disarming; recording may be interrupted")
+        issues.append(
+            "Flight end not established by landing/disarming; "
+            "recording may be interrupted"
+        )
     if telemetry["corrupt"] or telemetry["dropouts"]:
-        issues.append("ULog corruption/dropouts: missing observations may hide violations or visits")
+        issues.append(
+            "ULog corruption/dropouts: missing observations may hide "
+            "violations or visits"
+        )
     flight = [
-        row for row in positions
+        row
+        for row in positions
         if start is not None and start <= row["t"] <= (end or math.inf)
     ]
     coverage = has_position_coverage(flight, start, end, max_gap)
     if not coverage:
-        issues.append("Position coverage is missing, interrupted, or has a critical gap")
-    data_ok = coverage and not telemetry["corrupt"] and not telemetry["dropouts"]
+        issues.append(
+            "Position coverage is missing, interrupted, or has a critical gap"
+        )
+    data_ok = (
+        coverage
+        and not telemetry["corrupt"]
+        and not telemetry["dropouts"]
+        and all(position_valid(row) for row in flight)
+    )
     # 3. Consume each waypoint's qualifying visit before checking the next.
     reports = []
     cursor = 0
     previous_wp = None
-    blocked = bool(mission["issues"] or ambiguity or telemetry["corrupt"] or telemetry["dropouts"])
+    blocked = bool(
+        mission["issues"] or ambiguity or telemetry["corrupt"] or telemetry["dropouts"]
+    )
     for wp in mission["waypoints"]:
         if blocked:
-            reports.append(unknown_waypoint("Unsupported/ambiguous plan or previous ordered requirement unresolved"))
+            reports.append(
+                unknown_waypoint(
+                    "Unsupported/ambiguous plan or previous ordered "
+                    "requirement unresolved"
+                )
+            )
             continue
         # Duplicate locations need a distinct visit, not another slice of the same hold.
-        if previous_wp and (wp["lat"], wp["lon"]) == (previous_wp["lat"], previous_wp["lon"]):
+        if previous_wp and (wp["lat"], wp["lon"]) == (
+            previous_wp["lat"],
+            previous_wp["lon"],
+        ):
             exit_index = find_waypoint_exit(
-                previous_wp, flight, cursor, telemetry["home"],
-                horizontal_tolerance, altitude_tolerance,
+                previous_wp,
+                flight,
+                cursor,
+                telemetry["home"],
+                horizontal_tolerance,
+                altitude_tolerance,
             )
             if exit_index is None:
-                reports.append(unknown_waypoint("Repeated location has no distinct observed visit"))
+                reports.append(
+                    unknown_waypoint("Repeated location has no distinct observed visit")
+                )
                 blocked = True
                 continue
             cursor = exit_index
-        checks, consumed = check_waypoint(wp, flight[cursor:], telemetry["home"],
-                                          horizontal_tolerance, altitude_tolerance, max_gap,
-                                          end is not None, data_ok)
+        checks, consumed = check_waypoint(
+            wp,
+            flight[cursor:],
+            telemetry["home"],
+            horizontal_tolerance,
+            altitude_tolerance,
+            max_gap,
+            end is not None,
+            data_ok,
+        )
         reports.append(checks)
         if consumed is None:
             blocked = True
@@ -668,13 +786,23 @@ def print_requirements(mission):
     Args: mission (dict), parsed home/takeoffs/waypoints/issues.
     Returns: None; writes to standard output.
     """
-    print("Assumption: plannedHomePosition latitude/longitude is the expected launch location.")
-    print(f"Planned home: {mission['home']} (planned altitude is not used for conversion)")
+    print(
+        "Assumption: plannedHomePosition latitude/longitude is the expected "
+        "launch location."
+    )
+    print(
+        f"Planned home: {mission['home']} (planned altitude is not used for conversion)"
+    )
     for takeoff in mission["takeoffs"]:
-        print(f"Item {takeoff['order']}: takeoff (command 22), frame={takeoff['frame']}; no dwell extracted")
+        print(
+            f"Item {takeoff['order']}: takeoff (command 22), "
+            f"frame={takeoff['frame']}; no dwell extracted"
+        )
     for i, wp in enumerate(mission["waypoints"], 1):
-        print(f"Waypoint {i} (item {wp['order']}): lat={wp['lat']}, lon={wp['lon']}, "
-              f"alt={wp['alt']} m, frame={wp['frame']}, dwell={wp['dwell']} s")
+        print(
+            f"Waypoint {i} (item {wp['order']}): lat={wp['lat']}, lon={wp['lon']}, "
+            f"alt={wp['alt']} m, frame={wp['frame']}, dwell={wp['dwell']} s"
+        )
     for issue in mission["issues"]:
         print(f"Unsupported/unspecified: {issue}")
 
@@ -709,7 +837,6 @@ def print_report(report):
     print_overall(report["overall"])
 
 
-
 def prompt_number(label, default=None, positive=False):
     """Prompt until input is finite and in the allowed range.
 
@@ -733,7 +860,11 @@ def prompt_number(label, default=None, positive=False):
                 return value
         except ValueError:
             pass
-        print("Enter a finite positive number." if positive else "Enter a finite nonnegative number.")
+        print(
+            "Enter a finite positive number."
+            if positive
+            else "Enter a finite nonnegative number."
+        )
 
 
 def prompt_path(label):
@@ -776,12 +907,17 @@ def main():
         mission = load_requirement(plan_path)
         print_requirements(mission)
         if mission["issues"]:
-            print("Couldn't run: invalid or unsupported mission plan (see issues above).")
+            print(
+                "Couldn't run: invalid or unsupported mission plan (see issues above)."
+            )
             return 3
         launch = prompt_number("Launch tolerance (m)")
         horizontal = prompt_number("Waypoint horizontal tolerance (m)")
         vertical = prompt_number("Altitude tolerance (m)")
-        print(f"Tolerances: launch={launch:g} m, horizontal={horizontal:g} m, vertical={vertical:g} m; maximum gap={args.max_gap:g} s")
+        print(
+            f"Tolerances: launch={launch:g} m, horizontal={horizontal:g} m, "
+            f"vertical={vertical:g} m; maximum gap={args.max_gap:g} s"
+        )
         ulog = load_log(log_path)
         try:
             telemetry = extract_telemetry(ulog)
@@ -793,7 +929,15 @@ def main():
                         args.home_radius, args.landed_band, args.landed_hold, args.rtl_early_tolerance)
         print_report(report)
         return {PASS: 0, FAIL: 1, INCONCLUSIVE: 2}[report["overall"]]
-    except (OSError, ValueError, TypeError, KeyError, IndexError, ImportError, EOFError) as error:
+    except (
+        OSError,
+        ValueError,
+        TypeError,
+        KeyError,
+        IndexError,
+        ImportError,
+        EOFError,
+    ) as error:
         print(f"Couldn't run: {error}")
         return 3
 
