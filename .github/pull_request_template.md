@@ -2,16 +2,16 @@
 
 <!-- What this changes and why. -->
 
-Trello card: <!-- paste the card link (https://trello.com/c/...); required unless the PR has the no-card label -->
+Trello card: <!-- paste the card link (https://trello.com/c/...); for a small chore with no card, write "no card" -->
 
-## How to test
+## How it was tested
 
-<!-- Steps or the test that covers it. -->
+<!-- The commands you ran and their output. -->
 
 ## Checklist
 
-- [ ] Tests added or updated (or not needed)
-- [ ] Lint, format, and tests pass locally
+- [ ] Tests added or updated (or not needed). Verifier changes: PASS, FAIL and INCONCLUSIVE cases
+- [ ] `ruff check . && ruff format --check . && pytest` passes locally
 - [ ] Docs updated if behavior or setup changed
 - [ ] Experiment PRs: run record included
 - [ ] No secrets, `.env` contents, or partner data
