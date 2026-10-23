@@ -100,6 +100,7 @@ def parse_mission(plan):
     if not isinstance(items, list):
         raise ValueError("mission.items must be a list")
     terminal = False
+    terminal_command = None
     for order, item in enumerate(items, 1):
         if not isinstance(item, dict) or item.get("type") != "SimpleItem":
             issues.append(f"Item {order}: ComplexItem or unknown item pattern is unsupported")
@@ -119,12 +120,14 @@ def parse_mission(plan):
             if item.get("frame") not in (0, 3):
                 issues.append(f"Item {order}: unsupported takeoff altitude frame")
         elif command in (20, 21):
+            terminal_command = command
             terminal = True  # RTL/land define no selected waypoint requirement
         else:
             issues.append(f"Item {order}: unsupported command {command}")
     if not waypoints:
         issues.append("No command-16 waypoint requirements found")
-    return dict(home=home, waypoints=waypoints, takeoffs=takeoffs, issues=issues)
+    return dict(home=home, waypoints=waypoints, takeoffs=takeoffs, issues=issues,
+                terminal_command=terminal_command)
 
 
 def load_requirement(path):
@@ -222,6 +225,8 @@ def extract_telemetry(ulog):
         positions = topic_rows(ulog, "vehicle_global_position")
         source = "vehicle_global_position (ESTIMATED telemetry)"
     return dict(positions=positions, source=source,
+                groundtruth=groundtruth,
+                status=topic_rows(ulog, "vehicle_status"),
                 land=topic_rows(ulog, "vehicle_land_detected"),
                 home=topic_rows(ulog, "home_position"),
                 armed=topic_rows(ulog, "actuator_armed"),
@@ -469,8 +474,108 @@ def find_waypoint_exit(waypoint, samples, cursor, homes, horizontal, vertical):
 # Coordinate the checks in flight order
 
 
+def check_terminal(mission, telemetry, start, max_gap, home_radius=None,
+                   landed_band=None, landed_hold=None, last_waypoint_time=None,
+                   rtl_early_tolerance=0.2):
+    """Check terminal evidence independently of waypoint success.
+
+    Distances are metres; times are seconds. Unset thresholds are inconclusive.
+    Landing is a flat-ground height proxy, not proof of physical ground contact.
+    RTL must follow ordered final-waypoint completion, allowing the configured
+    early-switch tolerance (seconds). Missing completion evidence is inconclusive.
+    Ground-truth validity flags are intentionally ignored (unset by gz_bridge).
+    """
+    names = ("rtl_entered", "rtl_final_position", "landing", "disarm")
+    checks = {n: result(INCONCLUSIVE, "Flight scope or terminal evidence unavailable") for n in names}
+    for value in (home_radius, landed_band, landed_hold, rtl_early_tolerance):
+        if value is not None and (not finite(value) or value < 0):
+            raise ValueError("Terminal thresholds must be finite and nonnegative")
+    if landed_hold == 0:
+        raise ValueError("Landing hold must be positive")
+    if start is None or telemetry.get("corrupt") or telemetry.get("dropouts"):
+        return checks
+    states = telemetry.get("status", [])
+    # Multiple arm cycles cannot safely be assigned to a single mission.
+    transitions = [(a, b) for a, b in zip(states, states[1:])
+                   if a.get("arming_state") == 2 and b.get("arming_state") == 1
+                   and b["t"] > start]
+    if len(transitions) > 1 or any(r.get("arming_state") not in (1, 2) for r in states):
+        return checks
+    disarmed = transitions[0][1] if transitions else None
+    finish = disarmed["t"] if disarmed else math.inf
+    if disarmed and any(r["t"] > finish and r.get("arming_state") == 2 for r in states):
+        return checks
+    flight_states = [r for r in states if start <= r["t"] <= finish]
+    rtl = next((r for r in flight_states if r.get("nav_state") == 5), None)
+    if mission.get("terminal_command") == 20:
+        if rtl:
+            if not finite(last_waypoint_time) or rtl_early_tolerance is None:
+                checks["rtl_entered"] = result(INCONCLUSIVE,
+                    f"AUTO_RTL observed at t={rtl['t']:.3f} s, but ordered final-waypoint completion or timing tolerance is unavailable")
+            else:
+                early = last_waypoint_time - rtl["t"]
+                checks["rtl_entered"] = result(
+                    PASS if early <= rtl_early_tolerance or math.isclose(early, rtl_early_tolerance, abs_tol=1e-9, rel_tol=0) else FAIL,
+                    f"RTL t={rtl['t']:.3f} s; final waypoint completed t={last_waypoint_time:.3f} s; "
+                    f"early by={max(0, early):.3f} s; allowance={rtl_early_tolerance:g} s")
+        elif disarmed and has_position_coverage(flight_states, start, finish, max_gap) and all(
+                finite(r.get("nav_state")) for r in flight_states):
+            checks["rtl_entered"] = result(FAIL, "Flight ended with covered mode evidence but no AUTO_RTL")
+    if disarmed:
+        reason = disarmed.get("latest_disarming_reason")
+        checks["disarm"] = result(
+            INCONCLUSIVE if reason is None else PASS if reason == 6 else FAIL,
+            f"Armed to disarmed at t={finish:.3f} s; reason={reason} (required LANDING=6)")
+
+    truth = telemetry.get("groundtruth", [])
+    def valid(row):
+        return coordinates(row.get("lat"), row.get("lon")) and finite(row.get("alt"))
+    before = [r for r in truth if r["t"] < start]
+    launch = before[-1] if before else None
+    if launch is None or not valid(launch) or start - launch["t"] > max_gap:
+        return checks
+    if disarmed:
+        preceding = [r for r in truth if start <= r["t"] <= finish]
+        final = preceding[-1] if preceding else None
+        if home_radius is None:
+            checks["rtl_final_position"] = result(INCONCLUSIVE, "Set --home-radius in metres")
+        elif mission.get("terminal_command") == 20 and final and valid(final) and finish - final["t"] <= max_gap:
+            error = distance_m(final["lat"], final["lon"], launch["lat"], launch["lon"])
+            checks["rtl_final_position"] = result(PASS if error <= home_radius else FAIL,
+                f"At disarm: distance from observed launch={error:.3f} m; limit={home_radius:g} m; sample t={final['t']:.3f} s")
+    if landed_band is None or landed_hold is None:
+        checks["landing"] = result(INCONCLUSIVE, "Set --landed-band (m) and --landed-hold (s)")
+        return checks
+    # Search only after RTL for RTL missions; never count the initial ground dwell.
+    if mission.get("terminal_command") == 20 and rtl is None:
+        return checks
+    lower = rtl["t"] if rtl else start
+    hold_start = previous = None
+    landed_at = None
+    for row in truth:
+        if row["t"] < lower or row["t"] > finish:
+            continue
+        if previous is not None and row["t"] - previous > max_gap:
+            hold_start = landed_at = None
+        if valid(row) and abs(row["alt"] - launch["alt"]) <= landed_band:
+            if hold_start is None:
+                hold_start = row["t"]
+            if row["t"] - hold_start >= landed_hold:
+                landed_at = row["t"]
+        else:
+            hold_start = landed_at = None
+        previous = row["t"]
+    if landed_at is not None and (not disarmed or finish - previous <= max_gap):
+        checks["landing"] = result(PASS, f"Flat-ground height proxy held within {landed_band:g} m for at least {landed_hold:g} s; confirmed t={landed_at:.3f} s")
+    elif disarmed:
+        interval = [r for r in truth if lower <= r["t"] <= finish]
+        if has_position_coverage(interval, lower, finish, max_gap) and all(valid(r) for r in interval):
+            checks["landing"] = result(FAIL, "Disarmed without the required terminal ground-height hold")
+    return checks
+
+
 def verify(mission, telemetry, launch_tolerance, horizontal_tolerance, altitude_tolerance,
-           max_gap=DEFAULT_MAX_GAP):
+           max_gap=DEFAULT_MAX_GAP, home_radius=0.1, landed_band=0.1, landed_hold=3.5, rtl_early_tolerance=0.2):
     """Run the four selected requirements and combine their verdicts.
 
     Args: mission (dict), parsed requirements; telemetry (dict), extracted observations;
@@ -536,7 +641,11 @@ def verify(mission, telemetry, launch_tolerance, horizontal_tolerance, altitude_
             cursor += consumed + 1
         previous_wp = wp
     # 4. An established failure takes precedence over incomplete evidence.
-    statuses = [launch["status"]]
+    terminal = check_terminal(mission, telemetry, start if not ambiguity else None,
+                              max_gap, home_radius, landed_band, landed_hold,
+                              flight[cursor - 1]["t"] if reports and not blocked and cursor else None,
+                              rtl_early_tolerance)
+    statuses = [launch["status"]] + [c["status"] for c in terminal.values()]
     for checks in reports:
         for check in checks.values():
             statuses.append(check["status"])
@@ -546,7 +655,8 @@ def verify(mission, telemetry, launch_tolerance, horizontal_tolerance, altitude_
         overall = INCONCLUSIVE
     else:
         overall = PASS
-    return dict(source=telemetry["source"], launch=launch, waypoints=reports, issues=issues, overall=overall)
+    return dict(source=telemetry["source"], launch=launch, waypoints=reports,
+                terminal=terminal, issues=issues, overall=overall)
 
 
 # Display results and collect command-line input
@@ -586,7 +696,7 @@ def print_report(report):
     Args: report (dict), returned by verify().
     Returns: None; writes the terminal report.
     """
-    print("\nMission verification for the four selected requirements.")
+    print("\nMission verification for the requirements.")
     print(f"Position source: {report['source']}")
     print(f"Launch: {report['launch']['status']} - {report['launch']['reason']}")
     for i, checks in enumerate(report["waypoints"], 1):
@@ -594,6 +704,8 @@ def print_report(report):
             print(f"Waypoint {i} {name}: {check['status']} - {check['reason']}")
     for issue in report["issues"]:
         print(f"INCONCLUSIVE evidence: {issue}")
+    for name, check in report.get("terminal", {}).items():
+        print(f"{name}: {check['status']} - {check['reason']}")
     print_overall(report["overall"])
 
 
@@ -644,6 +756,11 @@ def main():
         --help prints usage and returns 0 without running verification.
     """
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--rtl-early-tolerance", type=float, default=0.2,
+                        help="allowed RTL lead before final waypoint completion, seconds (default: 0.2)")
+    parser.add_argument("--home-radius", type=float, help="allowed return distance from observed launch, metres")
+    parser.add_argument("--landed-band", type=float, help="allowed absolute height difference from launch, metres")
+    parser.add_argument("--landed-hold", type=float, help="required terminal height hold before disarm, seconds")
     parser.add_argument("--max-gap", type=float, default=DEFAULT_MAX_GAP,
                         help="maximum position gap and launch-position age, seconds (default: 1)")
     try:
@@ -672,7 +789,8 @@ def main():
             # The file was read, but ambiguous/invalid telemetry prevents a verdict.
             print_overall(INCONCLUSIVE, f" - invalid or ambiguous telemetry: {error}")
             return 2
-        report = verify(mission, telemetry, launch, horizontal, vertical, args.max_gap)
+        report = verify(mission, telemetry, launch, horizontal, vertical, args.max_gap,
+                        args.home_radius, args.landed_band, args.landed_hold, args.rtl_early_tolerance)
         print_report(report)
         return {PASS: 0, FAIL: 1, INCONCLUSIVE: 2}[report["overall"]]
     except (OSError, ValueError, TypeError, KeyError, IndexError, ImportError, EOFError) as error:
