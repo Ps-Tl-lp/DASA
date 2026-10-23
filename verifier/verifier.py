@@ -505,7 +505,10 @@ def verify(mission, telemetry, launch_tolerance, horizontal_tolerance, altitude_
     coverage = has_position_coverage(flight, start, end, max_gap)
     if not coverage:
         issues.append("Position coverage is missing, interrupted, or has a critical gap")
-    data_ok = coverage and not telemetry["corrupt"] and not telemetry["dropouts"]
+    data_ok = (
+        coverage and not telemetry["corrupt"] and not telemetry["dropouts"]
+        and all(position_valid(row) for row in flight)
+    )
     # 3. Consume each waypoint's qualifying visit before checking the next.
     reports = []
     cursor = 0
