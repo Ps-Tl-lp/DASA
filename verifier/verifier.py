@@ -290,7 +290,7 @@ def flight_window(telemetry, max_gap):
         )
     takeoff_times = []
     has_gap = False
-    for previous, current in zip(land, land[1:]):
+    for previous, current in zip(land, land[1:], strict=False):
         if previous["landed"] == 1 and current["landed"] == 0:
             takeoff_times.append(current["t"])
         if current["t"] - previous["t"] > max_gap:
@@ -306,7 +306,7 @@ def flight_window(telemetry, max_gap):
         return None, None, "Invalid arming evidence"
     arming_count = 0
     disarms = []
-    for previous, current in zip(armed, armed[1:]):
+    for previous, current in zip(armed, armed[1:], strict=False):
         if previous["armed"] == 0 and current["armed"] == 1:
             arming_count += 1
         if previous["armed"] == 1 and current["armed"] == 0 and current["t"] > start:
@@ -319,7 +319,9 @@ def flight_window(telemetry, max_gap):
     sequences = [
         r["seq_current"] for r in active if r.get("valid") == 1 and "seq_current" in r
     ]
-    if len(ids) > 1 or any(b < a for a, b in zip(sequences, sequences[1:])):
+    if len(ids) > 1 or any(
+        b < a for a, b in zip(sequences, sequences[1:], strict=False)
+    ):
         return None, None, "Mission change/restart detected; execution is ambiguous"
     return start, end, None
 
@@ -330,7 +332,8 @@ def flight_window(telemetry, max_gap):
 def check_launch(mission, positions, start, tolerance, max_gap):
     """Compare the last pre-takeoff position with planned home.
 
-    Args: mission (dict), parsed home coordinates; positions (list[dict]), time-ordered rows;
+    Args: mission (dict), parsed home coordinates;
+        positions (list[dict]), time-ordered rows;
         start (float | None), takeoff time in seconds since system start;
         tolerance (int | float), allowed horizontal error in meters;
         max_gap (int | float), maximum pre-takeoff position age in seconds.
@@ -355,7 +358,8 @@ def check_launch(mission, positions, start, tolerance, max_gap):
     error = distance_m(row["lat"], row["lon"], *mission["home"][:2])
     return result(
         PASS if error <= tolerance else FAIL,
-        f"distance={error:.2f} m, tolerance={tolerance:g} m, t={row['t']:.3f} s; takeoff={start:.3f} s",
+        f"distance={error:.2f} m, tolerance={tolerance:g} m, "
+        f"t={row['t']:.3f} s; takeoff={start:.3f} s",
     )
 
 
@@ -445,7 +449,8 @@ def check_waypoint(
             if altitude is None:
                 altitude = result(
                     PASS,
-                    f"t={timestamp:.3f} s, vertical error={vertical_error:.2f} m, target={target:.2f} m MSL",
+                    f"t={timestamp:.3f} s, vertical error={vertical_error:.2f} m, "
+                    f"target={target:.2f} m MSL",
                 )
             if hold_start is None:
                 hold_start = timestamp
@@ -454,7 +459,8 @@ def check_waypoint(
             if current_dwell >= wp["dwell"]:
                 dwell = result(
                     PASS,
-                    f"achieved={current_dwell:.3f} s, required={wp['dwell']:g} s, t={hold_start:.3f}..{timestamp:.3f} s",
+                    f"achieved={current_dwell:.3f} s, required={wp['dwell']:g} s, "
+                    f"t={hold_start:.3f}..{timestamp:.3f} s",
                 )
                 return dict(arrival=arrival, altitude=altitude, dwell=dwell), index
         else:
@@ -474,7 +480,8 @@ def check_waypoint(
     )
     altitude = altitude or result(
         status,
-        f"No simultaneous horizontal/altitude match; best vertical error inside horizontal region={best_vertical:.2f} m; {why}",
+        "No simultaneous horizontal/altitude match; "
+        f"best vertical error inside horizontal region={best_vertical:.2f} m; {why}",
     )
     if wp["dwell"] == 0:
         dwell = result(PASS, "Zero dwell: no hold required")
@@ -512,7 +519,7 @@ def has_position_coverage(samples, start, end, max_gap):
         return False
     if end - samples[-1]["t"] > max_gap:
         return False
-    for previous, current in zip(samples, samples[1:]):
+    for previous, current in zip(samples, samples[1:], strict=False):
         if current["t"] - previous["t"] > max_gap:
             return False
     return True
@@ -554,13 +561,15 @@ def verify(
 ):
     """Run the four selected requirements and combine their verdicts.
 
-    Args: mission (dict), parsed requirements; telemetry (dict), extracted observations;
+    Args: mission (dict), parsed requirements;
+        telemetry (dict), extracted observations;
         launch_tolerance, horizontal_tolerance, altitude_tolerance (int | float),
         allowed launch/waypoint/altitude errors in meters;
         max_gap (int | float, optional), sample gap/launch age in seconds; default 1.
     Returns: dict with source, launch, ordered waypoints, issues, and overall.
         Verdict priority is FAIL, then INCONCLUSIVE, then PASS.
-    Raises: ValueError for negative/nonfinite tolerances or a nonpositive/nonfinite gap.
+    Raises: ValueError for negative/nonfinite tolerances or a
+        nonpositive/nonfinite gap.
     """
     for value in (launch_tolerance, horizontal_tolerance, altitude_tolerance, max_gap):
         if not finite(value) or value < 0:
@@ -577,11 +586,13 @@ def verify(
         issues.append(ambiguity)
     if end is None:
         issues.append(
-            "Flight end not established by landing/disarming; recording may be interrupted"
+            "Flight end not established by landing/disarming; "
+            "recording may be interrupted"
         )
     if telemetry["corrupt"] or telemetry["dropouts"]:
         issues.append(
-            "ULog corruption/dropouts: missing observations may hide violations or visits"
+            "ULog corruption/dropouts: missing observations may hide "
+            "violations or visits"
         )
     flight = [
         row
@@ -610,7 +621,8 @@ def verify(
         if blocked:
             reports.append(
                 unknown_waypoint(
-                    "Unsupported/ambiguous plan or previous ordered requirement unresolved"
+                    "Unsupported/ambiguous plan or previous ordered "
+                    "requirement unresolved"
                 )
             )
             continue
@@ -680,14 +692,16 @@ def print_requirements(mission):
     Returns: None; writes to standard output.
     """
     print(
-        "Assumption: plannedHomePosition latitude/longitude is the expected launch location."
+        "Assumption: plannedHomePosition latitude/longitude is the expected "
+        "launch location."
     )
     print(
         f"Planned home: {mission['home']} (planned altitude is not used for conversion)"
     )
     for takeoff in mission["takeoffs"]:
         print(
-            f"Item {takeoff['order']}: takeoff (command 22), frame={takeoff['frame']}; no dwell extracted"
+            f"Item {takeoff['order']}: takeoff (command 22), "
+            f"frame={takeoff['frame']}; no dwell extracted"
         )
     for i, wp in enumerate(mission["waypoints"], 1):
         print(
@@ -803,7 +817,8 @@ def main():
         horizontal = prompt_number("Waypoint horizontal tolerance (m)")
         vertical = prompt_number("Altitude tolerance (m)")
         print(
-            f"Tolerances: launch={launch:g} m, horizontal={horizontal:g} m, vertical={vertical:g} m; maximum gap={args.max_gap:g} s"
+            f"Tolerances: launch={launch:g} m, horizontal={horizontal:g} m, "
+            f"vertical={vertical:g} m; maximum gap={args.max_gap:g} s"
         )
         ulog = load_log(log_path)
         try:
