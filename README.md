@@ -52,6 +52,11 @@ The checks above don't need PX4. Flying the missions in `missions/` does. PX4 is
 | `diversification/`, `attacks/` (planned) | Variant generation (Blue) and failure and attack scenarios (Red) |
 | `experiments/`, `scripts/`, `results/` (planned) | Listed in the project plan's repository structure |
 
+## Staging and rollback
+
+- **Staging:** every change runs CI (lint and tests) on its pull request before it reaches `main`. In place since Oct 22, 2026.
+- **Rollback:** revert the squash-merged commit on `main`. From the end of fall week 10, `main` is also tagged each term (`fall-2026`, see [Release process](CONTRIBUTING.md#release-process)), and rolling back means checking out the last tag.
+
 ## More
 
 - [CONTRIBUTING.md](CONTRIBUTING.md): setup beyond this page, local checks, branches, review, and the Definition of Done.
