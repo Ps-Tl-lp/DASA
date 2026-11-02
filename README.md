@@ -5,9 +5,9 @@
 
 # HYDRA
 
-HYDRA (Heterogeneous Yield of Diverse Redundant Autopilots, formerly DASA) is an Oregon State CS capstone research project. Autonomous vehicles often run identical software, so an attack found against one can transfer to every vehicle running the same code. HYDRA asks whether AI-generated software diversity can reduce attack transferability while preserving required mission behavior. It works with PX4 flight software in simulation: a mission plan is flown in PX4 SITL, and a verifier checks the `.ulg` flight log against the plan, reporting PASS, FAIL, or INCONCLUSIVE for each requirement.
+HYDRA (Heterogeneous Yield of Diverse Redundant Autopilots, formerly DASA) is an Oregon State CS capstone research project. Autonomous vehicles often run identical software, so an attack found against one can transfer to every vehicle running the same code. HYDRA asks whether AI-generated software diversity can reduce attack transferability while preserving required mission behavior. It uses PX4 flight software in simulation as its evaluation platform, though the approach itself isn't tied to PX4. A mission is flown in PX4 SITL, and a verifier checks the `.ulg` flight log against the mission, reporting PASS, FAIL, or INCONCLUSIVE.
 
-Status: the three mission definitions and their tests are in place. The verifier is in progress.
+Status: the three mission definitions and their tests are in place. The verifier's design is being reworked, and no verifier code is on `main` yet.
 
 ## Quickstart
 
@@ -16,11 +16,11 @@ You need git and Python 3.12 or newer: `python3 --version` should print 3.12 or 
 - macOS: if `python3` is older (Xcode's is 3.9), run `brew install python`. quick-setup needs Homebrew anyway.
 - Ubuntu or WSL2: if creating the venv fails, run `sudo apt install python3-venv` and `rm -rf .venv`, then run the commands again.
 
-Clone the repo (you need read access to `dasa-capstone/DASA`):
+Clone the repo (you need read access to `dasa-capstone/HYDRA`):
 
 ```sh
-git clone https://github.com/dasa-capstone/DASA.git
-cd DASA
+git clone https://github.com/dasa-capstone/HYDRA.git
+cd HYDRA
 ```
 
 Set up and run the full check:

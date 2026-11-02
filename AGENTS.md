@@ -4,9 +4,10 @@ Context for AI coding agents working in this repository. A line belongs here onl
 
 ## Project
 
-HYDRA (formerly DASA) is a research project on whether AI-generated software diversity reduces attack transferability while preserving required mission behavior. We use PX4 flight software in simulation.
+HYDRA (formerly DASA) is a research project on whether AI-generated software diversity reduces attack transferability while preserving required mission behavior. PX4 in simulation is the evaluation platform: the approach and the verifier stay general, and PX4 specifics belong in PX4's environment representation and the mappings to and from its files.
 
-- **Pipeline:** mission spec (QGroundControl `.plan`) → PX4 SITL → `.ulg` flight log → verifier → PASS / FAIL / INCONCLUSIVE per requirement.
+- **Pipeline:** mission (general representation) → PX4 mission → PX4 SITL → `.ulg` flight log → verifier (maps the log back onto the representation) → PASS / FAIL / INCONCLUSIVE.
+- **Current state:** on Oct 30 the team adopted a five-step approach in which a mission is preconditions, a start state, a goal state and postconditions, with start and goal states as snapshots of the whole environment. Older material (the waypoint, RTL and dwell notes in `docs/testing.md`, any "draft v11" definition) describes the earlier waypoint approach.
 - **Workstreams:** Red builds controlled failure and attack scenarios. Blue generates diversified variants that must still pass the verifier.
 - **Docs:**
   - Requirements: `docs/requirements.md`
@@ -61,6 +62,7 @@ Flying missions needs PX4: see ADR 0001 (quick-setup), `docs/adr/0001-dev-enviro
 - Adding or upgrading dependencies.
 - Changing the PX4 version, simulator setup, or mission definitions.
 - Changing verifier pass/fail criteria or tolerances.
+- Writing verifier code before the Oct 30 approach is settled (team decision).
 - Editing CI workflows, repo settings, or anything partner-facing.
 - Structural changes. These need an ADR in `docs/adr/` before code.
 
@@ -73,7 +75,7 @@ Flying missions needs PX4: see ADR 0001 (quick-setup), `docs/adr/0001-dev-enviro
 
 ## Confidentiality
 
-What may go into which AI tools is set by the AI and Confidentiality section of the team charter. That section is being confirmed with our project partner. Until it is, treat Prithvi's existing code, experiment results, and meeting content as restricted: use them only in tools the team has approved. Public PX4 docs, generic code, and error messages with paths and keys removed are fine anywhere.
+What may go into which AI tools is set by the AI and Confidentiality section of the team charter, confirmed with our project partner. Fully open, in any AI tool: public docs and general questions (PX4, QGroundControl, Git and GitHub, programming), code with no partner-specific logic, error messages and stack traces with paths, usernames and keys removed, and our own drafts with no partner information. When unsure, treat it as restricted and ask the AI Coordinator first.
 
 ## To be added
 

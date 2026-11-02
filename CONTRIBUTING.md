@@ -50,8 +50,8 @@ Test conventions are in [`docs/testing.md`](docs/testing.md): pytest tests in `t
 - Use the [PR template](.github/pull_request_template.md). Link the Trello card, paste the commands you ran with their output, and keep the PR small enough to review in one sitting. A small chore with no card (a dependency bump, a typo fix) writes "no card" instead; anything with a decision in it gets a card.
 - A teammate other than the author approves. One approval is required. Nobody self-merges.
 - Reviews arrive within one business day and ask for specific changes. "LGTM" alone doesn't count as a review in sprint notes.
-- Copilot code review is requested automatically when a PR opens. It is advisory and never replaces a teammate's approval. Its comments are fixed or answered like anyone else's.
-- Before a PR merges, every review thread is resolved (Copilot's included), the `test` and `lint` checks pass, and the branch is up to date with `main`. A new push dismisses earlier approvals, so ask for a fresh review after pushing.
+- Copilot code review is advisory and never replaces a teammate's approval. While the repo is private on the Free plan it isn't requested automatically, so request it by hand if you want it. Its comments are fixed or answered like anyone else's.
+- Before a PR merges, every review thread is resolved (Copilot's included), the `test` and `lint` checks pass, and the branch is up to date with `main`. Approvals aren't dismissed automatically while the ruleset is off, so ask for a fresh review after pushing.
 - PRs merge by squash only, and the branch is deleted on merge.
 - Docs change in the same PR as the code they describe.
 - The author owns everything in the PR, including AI-written code, and must be able to explain it. Structural changes suggested by an AI tool go through an ADR first.
@@ -60,18 +60,21 @@ Test conventions are in [`docs/testing.md`](docs/testing.md): pytest tests in `t
 
 A change merges only when it passes every check below. `main-protection` is the ruleset on `main`.
 
+The repo is private and the `dasa-capstone` org is on GitHub's Free plan, which doesn't enforce rulesets on private repos. Until that changes ([`docs/risks.md`](docs/risks.md)), the author and reviewer check every Off row by hand before merging.
+
 | Check | Enforced by | Status |
 |---|---|---|
-| Reaches `main` through a PR approved by a teammate other than the author | `main-protection`: PR required, 1 approval, empty bypass list | On |
-| The approval covers the latest push | `main-protection`: stale approvals dismissed on new pushes | On |
-| All review threads resolved, including Copilot's | `main-protection`: thread resolution required, Copilot review requested automatically | On |
-| Tests pass | `test` job in [`.github/workflows/ci.yml`](.github/workflows/ci.yml), a required status check in `main-protection` | Pending: the check becomes required once the workflow has run on `main` (owner: Gabriel) |
-| Lint and format clean | `lint` job in the same workflow, a required status check in `main-protection` | Pending, same as above |
-| Branch up to date with `main` | `main-protection`: strict status checks | Pending, set together with the required checks |
-| Squash merge, linear history, no force-push to or deletion of `main` | `main-protection` and the repo's merge settings | On |
+| Reaches `main` through a PR approved by a teammate other than the author | `main-protection`: PR required, 1 approval, empty bypass list | Off |
+| The approval covers the latest push | `main-protection`: stale approvals dismissed on new pushes | Off |
+| All review threads resolved, including Copilot's | `main-protection`: thread resolution required, Copilot review requested automatically | Off |
+| Tests pass | `test` job in [`.github/workflows/ci.yml`](.github/workflows/ci.yml), a required status check in `main-protection` | Runs on every PR; not required |
+| Lint and format clean | `lint` job in the same workflow, a required status check in `main-protection` | Runs on every PR; not required |
+| Branch up to date with `main` | `main-protection`: strict status checks | Off |
+| Squash merge only, branch deleted on merge | The repo's merge settings | On |
+| Linear history, no force-push to or deletion of `main` | `main-protection` | Off |
 | New or changed logic has tests. Verifier changes have PASS, FAIL, and INCONCLUSIVE cases ([`docs/testing.md`](docs/testing.md)) | PR template checklist, checked by the reviewer | On |
 | Docs updated when behavior or setup changes | PR template checklist, checked by the reviewer | On |
-| No secrets committed | GitHub secret scanning and push protection | On while the repo is public. When it goes private, a gitleaks CI job replaces them (owner: Gabriel) |
+| No secrets committed | A gitleaks CI job (GitHub secret scanning and push protection aren't available on a private repo on Free) | Off: the gitleaks job isn't added yet (owner: Gabriel) |
 | An experiment can be rerun by a teammate with the same result | A run record in the PR (commit, PX4 version, simulator and airframe, parameters, mission, seed, and the model and prompt for generated variants). PR template checklist, checked by the reviewer | On for experiment PRs |
 
 ## Where other work lives
