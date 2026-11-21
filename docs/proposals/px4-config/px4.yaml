@@ -1,0 +1,164 @@
+# Proposed PX4 config for the HYDRA demo.
+#
+# The one PX4-specific file. It has three jobs (see whiteboard.png):
+#   1. preconditions  -> generator   which generated missions to reject
+#   2. tasks          -> plan step   how a task becomes a .plan item
+#   3. log_mappings   -> verifier    which log field gives each property, and the calculation
+# Every row is explained, with its PX4 doc link, in MAPPINGS.md.
+#
+# Reading it: "name: value" is one setting. Indented lines belong to the line above.
+# { a: 1 } is a short group, [a, b] is a short list, # starts a note.
+# Blank values and PLACEHOLDER comments mark open decisions.
+# Positions are metres from home (0, 0, 0): x north, y east, z up. Home is the agent's base.
+
+platform: px4
+vehicle_type: multicopter # the only type flown so far
+log_format: ulog # .ulg. It also records the PX4 parameters the flight used.
+
+# ---- 1. Preconditions (PROPOSED) ----------------------------------------------
+# The generator rejects a mission that breaks one of these. Preconditions are written only here,
+# not in the mission files. (Working them out per mission was also considered.)
+# The demo starts on the ground at home, at rest. Keep those start values fixed.
+# Generator settings, such as how many waypoints, are not PX4-specific <- are we sure about this?? and are not in this file.
+preconditions:
+  # Allowed values for a generated value. Each range applies in the start and the goal state.
+  # PLACEHOLDER: every blank below. Both GF_MAX_ limits were off in the two demo logs, so the
+  # numbers are ours to pick.
+  allowed_values:
+    agent.x: { min, max }
+    agent.y: { min, max }
+    agent.z: { min: 0, max } # 0 = home elevation
+    waypoint.x: { min, max }
+    waypoint.y: { min, max }
+    waypoint.z: { min: 0, max }
+
+  # Read the two geofence limits from the configured simulator before generation.
+  # Horizontal distance is measured per point as sqrt(x*x + y*y). The zone is a mission rule.
+  other_constraints:
+    max_distance_from_home:
+      {
+        applies_to: [agent.x, agent.y, waypoint.x, waypoint.y],
+        limit: GF_MAX_HOR_DIST,
+        off_when: 0,
+      }
+    max_height_above_home:
+      { applies_to: [agent.z, waypoint.z], limit: GF_MAX_VER_DIST, off_when: 0 }
+    outside_no_fly_zones:
+      { applies_to: [agent.x, agent.y, agent.z, waypoint.x, waypoint.y, waypoint.z] }
+
+  # PLACEHOLDER: where a no-fly zone's box is written (here, or as an object in the environment <- followup in chat, too long for a comment).
+  # If here, it could look like:  no_fly_zones: [{ x: [10, 20], y: [0, 5], z: [0, 40] }]
+  no_fly_zones: []
+
+  # Preconditions we know about and have not modelled yet. See MAPPINGS.md, section 3.
+  not_modelled_yet: [can_arm, enough_battery_for_the_trip, a_path_exists]
+
+# ---- 2. Tasks -> plan items ---------------------------------------------------
+# A task says what we ask the drone to do. How it flies (an action) is PX4's job and is not
+# modelled in this file.
+#   takes         values the plan step fills in. They appear below with a $ in front.
+#   needs         what must be true before the task
+#   sets          the state change the task is for
+#   plan_item     the .plan item it becomes (command and frame are MAVLink numbers)
+#   requires_run  settings the plan step must check before it counts on `sets`
+#   relies_on     PX4 parameters that affect how the item is flown
+# A name with no $, like waypoint.z or base.x, means "copy that property's value".
+# How tasks are picked from a start and goal state: MAPPINGS.md, section 4 (our assumption).
+# PLACEHOLDER: where to supply required order, takeoff height and hold time.
+# PLACEHOLDER: no task lands away from home. A mission that lands elsewhere would need one.
+tasks:
+  takeoff:
+    takes: [height]
+    needs: { agent.landed: true }
+    sets: { agent.z: $height, agent.landed: false }
+    plan_item: { command: 22, frame: 3, params: [0, 0, 0, null, $home_lat, $home_lon, $height] }
+  goto:
+    takes: [waypoint, hold_s]
+    needs: { agent.landed: false }
+    sets: { agent.x: waypoint.x, agent.y: waypoint.y, agent.z: waypoint.z, waypoint.visited: true }
+    plan_item:
+      { command: 16, frame: 3, params: [$hold_s, 0, 0, null, $wp_lat, $wp_lon, waypoint.z] }
+    relies_on: [NAV_ACC_RAD, NAV_MC_ALT_RAD] # how close PX4 itself counts as reached
+  return_home:
+    # `sets` holds only if the base is PX4's actual home and the return ends in a landing.
+    requires_run: { RTL_TYPE: 0, rally_points: [], RTL_LAND_DELAY: { min: 0 } }
+    needs: { agent.landed: false }
+    sets: { agent.x: base.x, agent.y: base.y, agent.z: base.z, agent.landed: true }
+    plan_item: { command: 20, frame: 2, params: [0, 0, 0, null, 0, 0, 0] }
+    relies_on:
+      [RTL_TYPE, RTL_RETURN_ALT, RTL_DESCEND_ALT, RTL_LAND_DELAY, RTL_MIN_DIST, RTL_CONE_ANG]
+
+# Defaults used in our simple.plan. Each item also gets Altitude, equal to
+# its last param. The plan step numbers the items (doJumpId 1, 2, 3) and writes the rest of the
+# file, as in missions/simple.plan.
+plan_item_defaults:
+  { type: SimpleItem, autoContinue: true, AltitudeMode: 1, AMSLAltAboveTerrain: null }
+
+# $home_lat, $home_lon, $wp_lat and $wp_lon are not in any `takes`. Home's latitude and longitude
+# must be known before the run, so they come from the simulator's configured start position.
+# The log's home_position can confirm them afterwards. A helper still to write turns waypoint
+# positions in metres into latitude and longitude from that home.
+
+# ---- 3. Log mappings ----------------------------------------------------------
+# Direct rows name a message topic and field. Other rows use a helper or a start-state declaration.
+#   subtract_first    take away the first logged value (where the drone sat before takeoff)
+#   flip_sign         PX4's z points down, ours points up
+#   use: last         the final sample of one complete flight
+#   declared_in       never read from the log; the start state's value stands
+#   helper            worked out in code (helpers_example.py has `visited`)
+#   candidate_helper  possible evidence only, not enough to decide. Not written.
+# If a required check lacks adequate evidence, its verdict is INCONCLUSIVE.
+# Positions assume the drone starts at home.
+log_mappings:
+  agent.x: { topic: vehicle_local_position_groundtruth, field: x, subtract_first: true, use: last }
+  agent.y: { topic: vehicle_local_position_groundtruth, field: y, subtract_first: true, use: last }
+  agent.z:
+    {
+      topic: vehicle_local_position_groundtruth,
+      field: z,
+      subtract_first: true,
+      flip_sign: true,
+      use: last,
+    }
+  agent.velocity.x: { topic: vehicle_local_position_groundtruth, field: vx, use: last }
+  agent.velocity.y: { topic: vehicle_local_position_groundtruth, field: vy, use: last }
+  agent.velocity.z:
+    { topic: vehicle_local_position_groundtruth, field: vz, flip_sign: true, use: last }
+  agent.landed: { topic: vehicle_land_detected, field: landed, use: last } # PLACEHOLDER: proposed agent property for takeoff and return_home
+  waypoint.visited: { helper: visited, tolerance: visit_distance_m }
+
+  # PLACEHOLDER: kept for now. Nothing in the log shows what the vehicle is fitted with.
+  agent.has_camera: { declared_in: start_state }
+  agent.has_grippers: { declared_in: start_state }
+
+  # CANDIDATES. Neither demo flight used a gripper, a camera or an injected failure. A command in
+  # the log does not show that anything happened.
+  agent.is_carrying: { candidate_helper: last_gripper_command } # command after arming, no payload feedback
+  agent.was_attacked: { candidate_helper: failure_requested } # PLACEHOLDER: what counts as an attack
+  waypoint.clicked_pic: { candidate_helper: picture_taken_near, tolerance: visit_distance_m }
+  waypoint.has_package: # no source
+
+# Evidence for postconditions. These are not state properties.
+#   use: min_while_armed   the lowest valid value (0 to 1) between arming and disarming
+postcondition_evidence:
+  disarmed_after_landing: {
+      topic: vehicle_status,
+      field: latest_disarming_reason,
+      use: last,
+      equals: 6,
+    } # 6 = PX4 disarmed itself after landing (7 in PX4 v1.13 to v1.16)
+  entered_no_fly_zone: { helper: entered_box } # helper not written
+  hold_time_s: { helper: time_within, tolerance: visit_distance_m } # helper not written
+  # CANDIDATES. The four diagnostic signs can all stay clear during obstacle contact.
+  collision_or_crash: { candidate_helper: crash_signs } # PLACEHOLDER: what evidence can decide this
+  # Not demo requirements: time and battery limits.
+  flight_time_s: { helper: time_armed } # armed duration, including time on the ground
+  lowest_battery: { topic: battery_status, field: remaining, use: min_while_armed } # -1 means invalid
+
+# ---- Tolerances ---------------------------------------------------------------
+# PLACEHOLDER: no values chosen, and where tolerances are defined is not decided either.
+# Evidence for picking them is in MAPPINGS.md, section 5.
+tolerances:
+  visit_distance_m: # how close to a waypoint counts as visited
+  goal_position_m: # how close the final position must be to the goal state's
+  goal_velocity_m_s: # PLACEHOLDER: comparison for an at-rest goal
