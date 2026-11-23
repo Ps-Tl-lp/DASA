@@ -161,8 +161,15 @@ def test_tasks_use_the_simple_plans_commands_and_frames():
 
 
 def test_base_is_where_the_simple_plan_starts():
-    home_lat, home_lon, _ = PLAN["plannedHomePosition"]
-    assert CONFIG["base_lat_lon"] == {"lat": home_lat, "lon": home_lon}
+    home_lat, home_lon, home_alt = PLAN["plannedHomePosition"]
+    assert CONFIG["base_lat_lon"] == {"lat": home_lat, "lon": home_lon, "alt": home_alt}
+
+
+def test_each_helper_output_is_one_the_helper_returns():
+    for name, spec in CONFIG["inputs"].items():
+        if "output" in spec:
+            returns = CONFIG["helpers"][spec["helper"]]["returns"]
+            assert spec["output"] in returns, name
 
 
 def test_plan_item_defaults_match_the_simple_plan():

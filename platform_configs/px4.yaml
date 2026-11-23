@@ -61,15 +61,22 @@ vehicle_types:
 # PX4 parameters the harness sets before every demo flight. They apply to the whole flight, not
 # to one task. Anything not listed stays at PX4's default. A vehicle type can add its own
 # (see multicopter_camera).
+# On the simulator build (fca3df865a) every value here is what PX4 already uses for a
+# multicopter, so listing them changes nothing today: it pins them against a PX4 change and
+# gives the preconditions a value to read. All but one are PX4's documented parameter
+# defaults. RTL_RETURN_ALT is documented as 60 m, but PX4's multicopter startup script
+# (rc.mc_defaults) sets 30 m. Of the settings in this file, only multicopter_camera's
+# TRIG_MODE changes what PX4 does (NAV_MC_ALT_RAD would too, if
+# at_waypoint.height_within_m moved off 0.8).
 px4_setup:
-  RTL_TYPE: 0          # return goes straight to the base (our plans have no rally points)
-  RTL_LAND_DELAY: 0    # land on arrival instead of hovering
-  RTL_RETURN_ALT: 30   # the climb before flying home. Already 30 in both logs; set here so
-                       # the stays_in_geofence precondition has a value to read
+  RTL_TYPE: 0          # documented default. Return goes straight to the base (our plans have no rally points)
+  RTL_LAND_DELAY: 0    # documented default. Land on arrival instead of hovering
+  RTL_RETURN_ALT: 30   # documented default 60; rc.mc_defaults sets 30 for multicopters. The climb
+                       # before flying home; set here so stays_in_geofence has a value to read
   # How close in height counts as "at the waypoint". The harness follows the name to the number.
   NAV_MC_ALT_RAD: tolerances.at_waypoint.height_within_m
-  GF_MAX_HOR_DIST: 0   # PX4's geofence off. With it on, PX4 takes over when a variant drifts
-  GF_MAX_VER_DIST: 0   # and hides the failure we want to see. The verifier checks the geofence instead.
+  GF_MAX_HOR_DIST: 0   # documented default: PX4's geofence off. With it on, PX4 takes over when a variant
+  GF_MAX_VER_DIST: 0   # drifts and hides the failure we want to see. The verifier checks the geofence instead.
 
 # ---- Preconditions (generator) --------------------------------------------------
 # A mission the drone can't complete tells us nothing about a variant, so the generator only
@@ -85,7 +92,7 @@ preconditions:
   global:
     allowed_values:
       agent.vehicle_type: [multicopter, multicopter_camera]
-      waypoint.z: { min: 5 } # PROPOSED. Twice PX4's takeoff height setting (MIS_TAKEOFF_ALT, 2.5 m). The lowest waypoint flown so far is 6 m.
+      waypoint.z: { min: 5 } # PROPOSED. The lowest height we test. The lowest waypoint flown so far is 6 m.
     # How far out the generator is allowed to place a mission. Our own limit; PX4 and Gazebo
     # don't set one. It is a cylinder around the base.
     # A mission's geofence (in its settings) must fit inside it.
@@ -190,19 +197,25 @@ plan_template: missions/simple.plan
 # Where the simulator starts the drone, as latitude and longitude. It is quick-setup's default
 # PX4_HOME_LAT and PX4_HOME_LON, and the home in our three plans.
 # Takeoff writes it into the plan. The log's home_position can confirm it.
-base_lat_lon: { lat: 47.397971057728974, lon: 8.546163739800146 }
+# alt is the base's height above sea level, in metres, for the simulator. If any of PX4_HOME_LAT,
+# PX4_HOME_LON and PX4_HOME_ALT is set, PX4 needs all three (px4-rc.gzsim). 0 is the elevation of
+# Gazebo's default world and the plannedHomePosition height in simple.plan and survey.plan
+# (medium.plan has 491).
+base_lat_lon: { lat: 47.397971057728974, lon: 8.546163739800146, alt: 0 }
 
 # ---- Inputs (plan step) ---------------------------------------------------------
 # Where each $ value comes from. One row per name. `from` is one of:
-#   postcondition  the mission's postcondition called `name`, for this waypoint. `default` if the mission has none.
+#   postcondition  the mission's postcondition called `name`, for this waypoint: its `field`.
+#                  `default` if the mission has none.
 #   first_goto     the first goto in the plan
-#   waypoint       this waypoint's position, put through the helper
+#   waypoint       this waypoint's position, put through the helper. `output` names which of
+#                  the helper's results (`returns` in `helpers`) this value is.
 #   item           the plan item being written
 inputs:
   $height:      { from: first_goto, value: waypoint.z } # PROPOSED. Takeoff climbs to the first waypoint's height. Our three plans already do this.
-  $hold_s:      { from: postcondition, name: hold_at, default: 0 }
-  $wp_lat:      { from: waypoint, helper: metres_to_lat_lon } # the .plan file wants latitude and longitude, not metres
-  $wp_lon:      { from: waypoint, helper: metres_to_lat_lon }
+  $hold_s:      { from: postcondition, name: hold_at, field: min_s, default: 0 }
+  $wp_lat:      { from: waypoint, helper: metres_to_lat_lon, output: lat } # the .plan file wants latitude and longitude, not metres
+  $wp_lon:      { from: waypoint, helper: metres_to_lat_lon, output: lon }
   $index:       { from: item, value: position_in_plan } # 1 for the first item, 2 for the second
   $item_height: { from: item, value: param_7 } # the item's height: the last of its seven params. 0 for return_home, as in simple.plan
 
@@ -268,8 +281,11 @@ goal_check:
 # size, the hold at each waypoint, the order), come from the mission. The verifier checks against the
 # mission's values, not against what the plan file asked PX4 for. Each gives PASS, FAIL, or
 # INCONCLUSIVE when the log can't settle it.
+# Each entry's `mission.yaml:` comment is how a mission asks for it, as one item of its
+# postconditions list. PROPOSED, apart from hold_at, which is the M01 fixture's form.
 postconditions:
   # The same helper as the precondition of this name, run on the flown path with no clearance.
+  # mission.yaml: - stays_in_geofence: {max_distance_m: 60, max_height_m: 35} (from the base)
   stays_in_geofence:
     reads: [agent.x, agent.y, agent.z]
     helper: inside_geofence
@@ -279,6 +295,7 @@ postconditions:
   # INCONCLUSIVE if the log stops while the drone is still there and the hold isn't complete.
   # What a gap in the log does to this is not part of the rule yet (docs/px4-mappings.md
   # section 5 has a proposal).
+  # mission.yaml: - hold_at: {waypoint: W1, min_s: 5}
   hold_at:
     reads: [agent.x, agent.y, agent.z]
     helper: at_waypoint
@@ -287,13 +304,16 @@ postconditions:
   # The mission lists its waypoints in the order it wants. Find the first time the drone is at
   # the first one, then the first time after that at the second, and so on. PASS if every
   # waypoint gets a time. FAIL if one doesn't.
+  # mission.yaml: - visits_in_order: {waypoints: [W1, W2]}
   visits_in_order:
     reads: [agent.x, agent.y, agent.z]
     helper: at_waypoint
     rule: each waypoint is visited after the one before it
+  # mission.yaml: - disarmed_after_landing: {}
   disarmed_after_landing:
     reads: [disarm_reason]
     last_value: 6 # PX4 disarmed itself after landing (7 in PX4 v1.13 to v1.16)
+    relies_on: [COM_DISARM_LAND] # PX4 disarms this long after landing (2 s default); at <= 0 it never does
     rule: the last disarm reason is PX4 disarming itself after landing
 
 # ---- Helpers --------------------------------------------------------------------
@@ -305,7 +325,11 @@ helpers:
   at_waypoint:       { used_by: [verifier], zone: tolerances.at_waypoint, answers: is this position inside this waypoint's zone }
   inside_geofence:   { used_by: [generator, verifier], answers: is this position inside the mission's geofence }
   plan_exists:       { used_by: [generator], answers: can the plan step build a plan for this mission } # the plan step itself
-  metres_to_lat_lon: { used_by: [plan_step], answers: what latitude and longitude is this position } # PLACEHOLDER: not written
+  # Flat earth on PX4's sphere (R = 6371000 m, src/lib/geo/geo.h):
+  #   lat = base lat + degrees(north / R),  lon = base lon + degrees(east / (R cos(base lat)))
+  # It gives missions/simple.plan's W1 (50 m north) to the last digit. PX4's own
+  # MapProjection::reproject agrees to a few millimetres within the flight area.
+  metres_to_lat_lon: { used_by: [plan_step], returns: [lat, lon], answers: what latitude and longitude is this position } # PLACEHOLDER: not written
 
 # ---- Tolerances -----------------------------------------------------------------
 tolerances:
