@@ -3,7 +3,8 @@
 What it does, in the order the config's `tasks` section describes:
 
 1. List the tasks in a fixed order: takeoff, a goto for each waypoint that needs one (in
-   waypoint id order), return_home. If the start and goal states don't differ, no tasks.
+   waypoint id order), return_home. A waypoint a hold_at names always gets a goto. If
+   nothing changes and nothing is held, there are no tasks at all.
 2. Check the list: walk it from the start state. Each task's `needs` must hold, then its
    `sets` apply. The result must equal the goal state. If not, there is no plan, and the
    error says which task and property failed.
@@ -76,15 +77,19 @@ class Mission:
         for key in ("mission_id", "start", "goal"):
             if key not in spec:
                 raise PlanError(f"mission.yaml has no {key}")
+        for key in ("start", "goal"):
+            if not isinstance(spec[key], str) or not spec[key]:
+                raise PlanError(f"mission.yaml's {key} must be a file name")
+        postconditions = spec.get("postconditions") or []
+        if not isinstance(postconditions, list):
+            raise PlanError("mission.yaml's postconditions must be a list")
         self.mission_id = spec["mission_id"]
         try:
             self.start = read_state(folder / spec["start"])
             self.goal = read_state(folder / spec["goal"])
         except StateError as error:
             raise PlanError(str(error)) from error
-        self.postconditions = [
-            _postcondition(p) for p in spec.get("postconditions") or []
-        ]
+        self.postconditions = [_postcondition(p) for p in postconditions]
         self.waypoints = waypoint_ids(self.start)
         # Positions are metres from the base, so the base is the origin. A base anywhere
         # else would mean subtracting it from every position, sideways and up.
@@ -112,9 +117,19 @@ def _postcondition(item):
         return item, {}
     if isinstance(item, dict) and len(item) == 1:
         name, fields = next(iter(item.items()))
-        fields = dict(fields or {})
+        if fields is None:
+            fields = {}
+        if not isinstance(name, str) or not isinstance(fields, dict):
+            raise PlanError(f"postcondition {item!r} isn't one `name: {{fields}}` item")
+        fields = dict(fields)
         if "waypoint" in fields:
             fields["waypoint"] = str(fields["waypoint"])  # YAML reads `1` as a number
+        if name == "hold_at" and "min_s" in fields:
+            hold = fields["min_s"]
+            if isinstance(hold, bool) or not isinstance(hold, int | float) or hold < 0:
+                raise PlanError(
+                    f"hold_at's min_s must be a number of seconds, not {hold!r}"
+                )
         return name, fields
     raise PlanError(f"postcondition {item!r} isn't one `name: {{fields}}` item")
 

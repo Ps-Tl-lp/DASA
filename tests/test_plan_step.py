@@ -458,3 +458,24 @@ def test_a_numeric_waypoint_id_matches_its_hold_at(tmp_path):
 def test_waypoints_that_sort_equal_as_numbers_keep_a_fixed_order():
     state = {"waypoint.W1.x": 0, "waypoint.W01.x": 0, "waypoint.W2.x": 0}
     assert waypoint_ids(state) == ["W01", "W1", "W2"]
+
+
+@pytest.mark.parametrize(
+    "spec_change",
+    [
+        {"postconditions": [{"hold_at": {"waypoint": "W1", "min_s": None}}]},
+        {"postconditions": [{"hold_at": {"waypoint": "W1", "min_s": "five"}}]},
+        {"postconditions": [{"hold_at": {"waypoint": "W1", "min_s": -1}}]},
+        {"postconditions": [{"hold_at": "W1"}]},
+        {"postconditions": [{"hold_at": ["W1", 5]}]},
+        {"postconditions": "hold_at"},
+        {"start": None},
+    ],
+)
+def test_a_mission_yaml_written_wrong_has_no_plan(tmp_path, spec_change):
+    folder = _mission(tmp_path, {"W1": (40, 0, 20)})
+    spec = yaml.safe_load((folder / "mission.yaml").read_text())
+    spec.update(spec_change)
+    (folder / "mission.yaml").write_text(yaml.safe_dump(spec))
+    ok, reason = plan_exists(folder, CONFIG)
+    assert not ok and reason
