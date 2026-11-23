@@ -18,7 +18,7 @@
       "verdict": "PASS",
       "expected_s": 5,
       "observed_s": 5.03,
-      "reason": "Longest visit in mission mode ended at 42.216 s after entering at 37.184 s"
+      "reason": "Only visit in mission mode ended at 42.216 s after entering at 37.184 s"
     },
     {
       "check": "disarmed_after_landing",
