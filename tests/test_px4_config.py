@@ -162,6 +162,15 @@ def test_the_log_is_checked_against_the_recording():
     assert CONFIG["sim"]["pose_topic"].startswith(f"/world/{CONFIG['sim']['world']}/")
 
 
+def test_every_task_has_needs_and_sets_on_state_properties():
+    for name, task in CONFIG["tasks"].items():
+        assert "takes" not in task, name  # inputs says where every $ value comes from
+        for part in ("needs", "sets"):
+            assert task[part], (name, part)
+            for prop in task[part]:
+                assert prop.split(".")[0] in {"agent", "waypoint", "base"}, (name, prop)
+
+
 def test_px4_gets_the_same_waypoint_zone_as_the_checks():
     # Sideways goes into each goto item, height into a PX4 setting.
     assert CONFIG["tasks"]["goto"]["plan_item"]["params"][1] == f"{ZONE}.within_m"

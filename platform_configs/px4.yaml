@@ -126,13 +126,14 @@ preconditions:
       rule: every waypoint and the return climb are inside the mission's geofence by clearance_m
 
   tasks:
-    # plan_exists is the plan step itself. The generator asks it to build the plan for the
-    # drawn mission, and that plan is the one that gets flown.
-    # This is where equipment gets checked. take_picture needs agent.has_camera: true, so a
-    # picture mission on a drone without a camera fails here.
+    # plan_exists is the plan step itself: it builds the task list for the drawn mission, then
+    # checks it against the tasks' needs and sets (see Tasks). The generator keeps only a
+    # mission that passes, and that plan is the one that gets flown. Equipment is checked like
+    # any other need: a picture on a drone without a camera fails at take_picture's
+    # agent.has_camera.
     every_change_has_a_task:
       helper: plan_exists
-      rule: every change between start and goal has a task below whose `needs` can be met
+      rule: the plan step's task list, walked from the start state, meets every task's needs and ends in the goal state
 
   # Things we assume instead of checking. They depend on the running sim, not on the mission's
   # values, so the generator can't test them. The harness watches for them: if one fails (the
@@ -145,19 +146,27 @@ preconditions:
 # A task is something we ask the drone to do, like "go to W1". We only say what each task
 # changes, not the path PX4 takes to do it.
 #
-# How the plan step picks tasks: compare the start state with the goal state.
-#   - Every property that changed needs a task that sets it. `sets` is how the plan step finds it.
-#   - A property that didn't change gets no task. If a waypoint's clicked_pic is false in both
-#     states, there's no take_picture, even though the waypoint exists.
-#   - `needs` adds whatever has to happen first (takeoff before goto), and the goal state's end
-#     position adds return_home.
+# How the plan step builds a plan, in a fixed order: takeoff; a goto for each waypoint whose
+# visited or clicked_pic changes, in visits_in_order order (else waypoint id order);
+# take_picture straight after its waypoint's goto; return_home. A property that didn't change
+# gets no task: if a waypoint's clicked_pic is false in both states, there's no take_picture,
+# even though the waypoint exists. If nothing changes, the plan has no items.
+# Then it checks the list. Start from the start state; for each task in turn, its needs must
+# hold, then its sets apply. The result must equal the goal state on every property the goal
+# lists. Positions compare exactly: they are the mission's numbers, not flown ones. Any failure
+# means no plan, and the reason names the task and the property. The states can't show order or
+# time, so the check can't either: the order comes from the fixed order above, and the verifier
+# checks order and holds after the flight.
 # docs/px4-mappings.md section 4 walks through the simple mission.
 #
-#   takes      what the plan step hands the task: a waypoint, a height, a hold
 #   needs      what has to be true in the state before the task
-#   sets       the change in state the task makes
+#   sets       the change in state the task makes. A $ value here is filled from `inputs`, as
+#              in plan_item: takeoff's $height is the first goto's height
 #   plan_item  the .plan item it turns into (command and frame are MAVLink numbers)
 #   relies_on  PX4 parameters we don't set that shape how the task flies
+# In needs and sets, a value that starts with agent., waypoint. or base. is that property's
+# value in the running state, and anything else is a plain value. A waypoint that doesn't list
+# clicked_pic counts as false.
 # `base` and `waypoint` are things in the mission's state. The base is the launch point, at (0, 0, 0).
 # The two states can't show a hold or an order, so the plan step also reads the mission's
 # postconditions. The order of the gotos comes from visits_in_order. With no order asked for,
@@ -165,26 +174,23 @@ preconditions:
 # Every $ value in a plan_item is listed in `inputs`, after this section.
 tasks:
   takeoff:
-    takes: [$height]
-    needs: { agent.landed: true }
+    needs: { agent.landed: true, agent.x: base.x, agent.y: base.y } # the item takes off at base_lat_lon
     sets:  { agent.z: $height, agent.landed: false }
     plan_item: { command: 22, frame: 3, params: [0, 0, 0, null, base_lat_lon.lat, base_lat_lon.lon, $height] }
   goto:
     # Param 2 is how close PX4 has to get before it counts the waypoint reached and starts the
     # hold. Left at 0, PX4 uses 10 m, and the "hold" is mostly the drone slowing down on its way
     # in (docs/px4-mappings.md section 5).
-    takes: [waypoint, $hold_s]
     needs: { agent.landed: false }
     sets:  { agent.x: waypoint.x, agent.y: waypoint.y, agent.z: waypoint.z, waypoint.visited: true }
     plan_item: { command: 16, frame: 3, params: [$hold_s, tolerances.at_waypoint.within_m, 0, null, $wp_lat, $wp_lon, waypoint.z] }
   return_home:
     needs: { agent.landed: false }
-    sets:  { agent.x: base.x, agent.y: base.y, agent.z: base.z, agent.landed: true }
+    sets:  { agent.x: base.x, agent.y: base.y, agent.z: base.z, agent.landed: true, agent.velocity.x: 0, agent.velocity.y: 0, agent.velocity.z: 0 } # landed and at rest
     plan_item: { command: 20, frame: 2, params: [0, 0, 0, null, 0, 0, 0] }
   take_picture:
     # Flown in Gazebo in local spikes, each time at a waypoint with a 5 s hold. PX4 runs the item when
     # the waypoint's hold ends. Works only on a vehicle type that sets TRIG_MODE (multicopter_camera).
-    takes: [waypoint]
     needs: { agent.landed: false, agent.has_camera: true, agent.x: waypoint.x, agent.y: waypoint.y, agent.z: waypoint.z }
     sets:  { waypoint.clicked_pic: true }
     plan_item: { command: 203, frame: 2, params: [0, 0, 0, 0, 1, 0, 0] } # param 5 = 1: one picture

@@ -97,7 +97,7 @@ Can arm, enough battery and a path exists:
 
 ### How the plan step is meant to use `tasks`
 
-Agreed on Nov 21. A task's `sets` is the change it makes, and its `needs` is what has to be true first. The plan step works forward from the start state until it reaches the goal state.
+Agreed on Nov 21, changed on Nov 23. A task's `sets` is the change it makes, and its `needs` is what has to be true first. The plan step builds the task list in a fixed order (takeoff, the gotos, each picture straight after its goto, return home), then walks it from the start state: each task's `needs` must hold, its `sets` apply, and the result must equal the goal state. If any step fails there is no plan, and the reason names the task and the property. Our missions have one way to reach their goal, so a real planner (a search over `needs` and `sets`) waits until one has more. The example below is why the fixed order passes the check.
 
 The simple mission as an example. The start and goal states differ in one property: `waypoint.W1.visited` goes from false to true.
 
