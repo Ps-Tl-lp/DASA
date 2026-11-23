@@ -38,7 +38,12 @@ Times are in seconds, positions in metres from the base (x north, y east, z up) 
 - **`postconditions`:** a list with one item per postcondition, in the form `platform_configs/px4.yaml` gives next to each check, for example `- hold_at: {waypoint: W1, min_s: 5}`. `disarmed_after_landing` isn't listed, because every mission gets it.
 - **Generated missions** also carry the settings and seed they came from.
 
-**`start.xml`, `goal.xml`:** every property of the base, the agent and each waypoint, with its type and unit. A waypoint that doesn't list `clicked_pic` counts as false.
+**`start.xml`, `goal.xml`:** every property of the base, the agent and each waypoint, with its type and unit:
+- **Base:** `x`, `y`, `z`.
+- **Agent:** `x`, `y`, `z`; `velocity` with its own `x`, `y`, `z`; `landed`, `vehicle_type`, `has_camera`, `has_grippers`.
+- **Each waypoint:** `x`, `y`, `z`, `visited`, and `clicked_pic`. A waypoint that doesn't list `clicked_pic` counts as false.
+
+The environment file on the `env-rep` branch (`docs/environment/environment_representation.xml`) has more properties than these (`no_fly_zone`, `dwell_time`, `visited_at`, `under_range`, `is_carrying`, `was_attacked`, `has_package`). The config doesn't use them.
 
 **`run.json`**
 - **Which run:** `mission_id`, `run_id`, and `plan` (the `.plan` file's path, from the run folder).
@@ -67,7 +72,7 @@ Times are in seconds, positions in metres from the base (x north, y east, z up) 
 
   R01, made up by hand, has none of these keys, and no `time_zero_us` (it has no log). R01 and R02 are both log-only runs, so their velocity and `landed` stand for the log's own values: PX4's ground-truth velocity and land detector, not `rate_of` and the position rule.
 
-**`gz_pose.jsonl`** (the harness's Gazebo recording, named in `run.json`'s `recording`): one JSON object per line, as `platform_configs/px4.yaml` describes above its `readings`.
+**`gz_pose.jsonl`** (the harness's Gazebo recording, named in `run.json`'s `recording`): one JSON object per line, as `docs/px4-mappings.md` section 1 describes.
 - **Pose:** `{"k": "pose", "t": <sim seconds>, "p": [east, north, up]}` for the vehicle model.
 - **Publishers:** `{"k": "pubs", "pubs": [[address, type], ...]}` lists the pose topic's publishers.
 - **Recorder notes:** `{"k": "info", ...}`, including any `error`.
