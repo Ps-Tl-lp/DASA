@@ -8,4 +8,6 @@ select = ["E", "F", "W", "I", "B", "UP"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# The pipeline's packages (log_reader/, ...) sit at the repo root; let tests import them.
+pythonpath = ["."]
 addopts = "-ra --strict-markers"
