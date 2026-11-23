@@ -40,7 +40,8 @@ TIME_DECIMALS, VALUE_DECIMALS = 3, 4  # the File formats' rounding
 
 
 class ReaderError(Exception):
-    """The run can't be read at all: no log, or none of the topics it needs."""
+    """The run can't be read: no log, no time zero, or a field the config names is
+    missing from the log."""
 
 
 def load_config(path=DEFAULT_CONFIG):
@@ -75,27 +76,35 @@ def read_run(run_folder, config=None):
     log = Log(run_folder / run["log"], topics)
     time_zero_us = _time_zero(log, config["time_zero_topics"])
     needed = {row["topic"] for row in rows.values() if "topic" in row}
+    if recorded:
+        needed.add(section["log"]["topic"])  # the cross-check and the span need it
     missing_topics = sorted(t for t in needed if not log.has(t))
 
     readings = {}  # reading name -> [(t_us, value)], or one value for a parameter
-    for name, row in rows.items():
-        if row["source"] == "log":
-            readings[name] = _log_reading(log, row)
-
     cross = None
-    if recorded:
-        recording = Recording(run_folder / run["recording"])
-        cross = cross_check(
-            log,
-            recording,
-            run["recording"],
-            section,
-            follow(config, section["same_time_within_s"]),
-            follow(config, section["max_difference_m"]),
-        )
-        span = _log_span(log, section["log"]["topic"])
-        usable = recording.problem is None and span is not None
-        readings.update(_recording_readings(config, rows, recording, span, usable))
+    try:
+        for name, row in rows.items():
+            if row["source"] == "log":
+                readings[name] = _log_reading(log, row)
+        if recorded:
+            # A null `recording` is still a recorded run, just one without a file.
+            name = run["recording"]
+            recording = Recording(run_folder / name if name else None)
+            cross = cross_check(
+                log,
+                recording,
+                name,
+                section,
+                follow(config, section["same_time_within_s"]),
+                follow(config, section["max_difference_m"]),
+            )
+            span = _log_span(log, section["log"]["topic"])
+            usable = recording.problem is None and span is not None
+            readings.update(_recording_readings(config, rows, recording, span, usable))
+    except KeyError as error:
+        raise ReaderError(
+            f"the log has no field {error} that the config names"
+        ) from error
 
     return _assemble(run, rows, readings, missing_topics, time_zero_us, recorded, cross)
 
@@ -143,14 +152,20 @@ def _recording_readings(config, rows, recording, span, usable):
     start, end = span
     window = follow(config, config["cross_check"]["same_time_within_s"]) * 1e6
     samples = [s for s in recording.samples if start - window <= s[0] <= end + window]
+    # subtract_first measures from the recording's sample at the log's first
+    # ground-truth sample: where the drone sat before takeoff. A recording that started
+    # later has no such sample, and any later one could already be in the air, so there
+    # are no positions at all. The cross-check counts the missing samples, so the run is
+    # INCONCLUSIVE anyway.
+    if not samples or abs(samples[0][0] - start) > window:
+        return {name: [] for name in gz}
 
     out = {}
     # Positions first: north, east or up of each sample.
     for name, row in gz.items():
         if "field" in row:
             series = [(s[0], recording.value(s, row["field"])) for s in samples]
-            if row.get("subtract_first") and series:
-                # The first sample inside the span: where the drone sat before takeoff.
+            if row.get("subtract_first"):
                 first = series[0][1]
                 series = [(t, v - first) for t, v in series]
             out[name] = series
@@ -207,6 +222,8 @@ def _assemble(run, rows, readings, missing_topics, time_zero_us, recorded, cross
         return round((t_us - time_zero_us) / 1e6, TIME_DECIMALS)
 
     def number(value):
+        if not math.isfinite(value):
+            return None  # JSON has no NaN; null says "no usable value here"
         return round(value, VALUE_DECIMALS) + 0.0  # + 0.0 turns -0.0 into 0.0
 
     grouped = {name for names in GROUPS.values() for name in names}
@@ -245,9 +262,9 @@ def readings_text(readings):
     for index, (key, value) in enumerate(items):
         comma = "," if index < len(items) - 1 else ""
         if isinstance(value, list) and value and isinstance(value[0], dict):
-            inner = ",\n".join(f"    {json.dumps(v)}" for v in value)
+            inner = ",\n".join(f"    {json.dumps(v, allow_nan=False)}" for v in value)
             lines.append(f'  "{key}": [\n{inner}\n  ]{comma}')
         else:
-            lines.append(f'  "{key}": {json.dumps(value)}{comma}')
+            lines.append(f'  "{key}": {json.dumps(value, allow_nan=False)}{comma}')
     lines.append("}")
     return "\n".join(lines) + "\n"

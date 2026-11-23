@@ -33,7 +33,9 @@ def cross_check(
         "unmatched": 0,
         "over_limit": 0,
         "max_difference_m": None,
-        "publishers": _count(recording.publishers),
+        "publishers": len(recording.publishers)
+        if recording.listed_publishers
+        else None,
         "verdict": INCONCLUSIVE,
         "reason": "",
     }
@@ -64,9 +66,12 @@ def cross_check(
                 -recording.value(sample, "up"),
             ),
         )
-        largest = max(largest, difference)
-        if difference > max_difference_m:
+        # "Not within the limit" rather than "over it": a NaN in the log is never
+        # within anything, so it counts against the log instead of slipping through.
+        if not difference <= max_difference_m:
             result["over_limit"] += 1
+        if math.isfinite(difference):
+            largest = max(largest, difference)
     result["max_difference_m"] = largest
 
     total = len(north)
@@ -77,12 +82,14 @@ def cross_check(
         )
     elif result["over_limit"]:
         result["reason"] = (
-            f"{result['over_limit']} of {total} log samples are more than "
-            f"{max_difference_m:g} m from the recording"
+            f"{result['over_limit']} of {total} log samples are not within "
+            f"{max_difference_m:g} m of the recording"
         )
+    elif result["publishers"] is None:
+        result["reason"] = "the recording never listed the pose topic's publishers"
     elif result["publishers"] != 1:
         result["reason"] = (
-            f"the pose topic has {result['publishers']} publishers, not 1, so the "
+            f"the pose topic had {result['publishers']} publishers, not 1, so the "
             "recording may not be the simulator's"
         )
     else:
@@ -100,8 +107,3 @@ def _nearest(recording, times, t_us):
     candidates = [j for j in (i - 1, i) if 0 <= j < len(times)]
     j = min(candidates, key=lambda k: abs(times[k] - t_us))
     return recording.samples[j]
-
-
-def _count(publishers):
-    """How many publishers the recording saw, or None if it never listed them."""
-    return None if publishers is None else len(publishers)

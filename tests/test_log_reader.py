@@ -37,10 +37,17 @@ STATUS = [
 ]
 
 
-def _run(folder, log_topics, recording_lines=None, **run_extra):
-    """Write run.json, run.ulg and (if given) gz_pose.jsonl into folder."""
+def _run(folder, log_topics, recording_lines=None, parameters=None, **run_extra):
+    """Write run.json, run.ulg and (if given) gz_pose.jsonl into folder.
+
+    recording_lines: a list of JSON objects, raw text, or "absent" (named, not written).
+    """
     folder.mkdir(parents=True, exist_ok=True)
-    write_ulog(folder / "run.ulg", log_topics, {"TRIG_MODE": 0})
+    write_ulog(
+        folder / "run.ulg",
+        log_topics,
+        {"TRIG_MODE": 0} if parameters is None else parameters,
+    )
     run = {
         "mission_id": "T",
         "run_id": "R1",
@@ -49,7 +56,9 @@ def _run(folder, log_topics, recording_lines=None, **run_extra):
     }
     if recording_lines is not None:
         run["recording"] = "gz_pose.jsonl"
-        if recording_lines != "absent":
+        if isinstance(recording_lines, str) and recording_lines != "absent":
+            (folder / "gz_pose.jsonl").write_text(recording_lines)
+        elif recording_lines != "absent":
             lines = "\n".join(json.dumps(line) for line in recording_lines)
             (folder / "gz_pose.jsonl").write_text(lines + "\n")
     run.update(run_extra)
@@ -313,6 +322,9 @@ def test_r02_reads_as_the_fixture_says(tmp_path):
         if key not in ("position", "velocity"):
             assert readings[key] == value, key
             continue
+        if key == "velocity":
+            assert readings[key] == value  # PX4's own, nothing subtracted
+            continue
         # The fixture subtracted in 32-bit floats; we subtract in 64-bit. Two of 1300 z
         # values round the other way in the 4th decimal, so allow one unit there.
         assert [r["t_s"] for r in readings[key]] == [r["t_s"] for r in value]
@@ -322,3 +334,124 @@ def test_r02_reads_as_the_fixture_says(tmp_path):
                     key,
                     ours,
                 )
+
+
+# ---- Runs that go wrong in smaller ways ---------------------------------------------
+
+
+def test_a_null_recording_is_a_recorded_run_with_no_file(tmp_path):
+    folder = _run(tmp_path, _recorded_topics(), "absent", recording=None)
+    readings = read_run(folder)
+    assert readings["cross_check"]["verdict"] == "INCONCLUSIVE"
+    assert "no recording" in readings["cross_check"]["reason"]
+    assert readings["position"] == []
+
+
+def test_nan_in_the_log_is_never_within_the_limit(tmp_path):
+    rows = list(GT_ROWS)
+    rows[1] = (2_100_000, float("nan"), 1.0, -0.5, 0.0, 0.0, 0.0)
+    check = read_run(_run(tmp_path, _recorded_topics(rows), _recording()))[
+        "cross_check"
+    ]
+    assert (check["verdict"], check["over_limit"]) == ("INCONCLUSIVE", 1)
+
+
+def test_nan_in_a_log_only_run_is_written_as_null(tmp_path):
+    topics = dict(LOG_ONLY_TOPICS)
+    fields, rows = topics["vehicle_local_position_groundtruth"]
+    rows = [rows[0], (1_200_000, float("nan"), 5.0, -2.0, 0, 0, 0), *rows[2:]]
+    topics["vehicle_local_position_groundtruth"] = (fields, rows)
+    readings = read_run(_run(tmp_path, topics))
+    assert readings["position"][1]["x"] is None
+    assert json.loads(readings_text(readings))["position"][1]["x"] is None
+
+
+def test_a_second_publisher_that_comes_and_goes_is_inconclusive(tmp_path):
+    two = {"k": "pubs", "pubs": [["tcp://a", "T"], ["tcp://b", "T"]]}
+    one_again = {"k": "pubs", "pubs": [["tcp://a", "T"]]}
+    first = {"k": "pubs", "pubs": [["tcp://a", "T"]]}
+    lines = _recording(pubs=first, extra=[two, one_again])
+    check = read_run(_run(tmp_path, _recorded_topics(), lines))["cross_check"]
+    assert (check["verdict"], check["publishers"]) == ("INCONCLUSIVE", 2)
+
+
+def test_a_publisher_lookup_that_failed_is_inconclusive(tmp_path):
+    failed = {"k": "pubs", "pubs": [["error", "TimeoutError()"]]}
+    check = read_run(_run(tmp_path, _recorded_topics(), _recording(pubs=failed)))[
+        "cross_check"
+    ]
+    assert check["verdict"] == "INCONCLUSIVE" and "publishers" in check["reason"]
+
+
+def test_a_recording_that_never_lists_publishers_says_so(tmp_path):
+    lines = [line for line in _recording() if line.get("k") != "pubs"]
+    check = read_run(_run(tmp_path, _recorded_topics(), lines))["cross_check"]
+    assert (check["verdict"], check["publishers"]) == ("INCONCLUSIVE", None)
+    assert "never listed" in check["reason"]
+
+
+def test_a_recording_that_starts_after_the_log_gives_no_positions(tmp_path):
+    late = [pose for pose in POSES if pose[0] >= 2.2]
+    readings = read_run(_run(tmp_path, _recorded_topics(), _recording(late)))
+    # No recorded sample at the log's first ground-truth sample (2.0 s): no origin.
+    assert readings["position"] == readings["velocity"] == readings["landed"] == []
+    check = readings["cross_check"]
+    assert (check["verdict"], check["unmatched"]) == ("INCONCLUSIVE", 2)
+
+
+def test_recording_lines_out_of_order_or_repeated_read_the_same(tmp_path):
+    shuffled = [POSES[3], POSES[0], POSES[5], POSES[1], POSES[4], POSES[2]]
+    repeat = (2.1, [9.0, 9.0, 9.0])  # the same sim time again, later in the file
+    ordered = read_run(_run(tmp_path / "a", _recorded_topics(), _recording()))
+    jumbled = read_run(
+        _run(tmp_path / "b", _recorded_topics(), _recording([*shuffled, repeat]))
+    )
+    assert jumbled["position"] == ordered["position"]
+    assert jumbled["cross_check"]["verdict"] == "PASS"
+
+
+def test_a_cut_off_last_line_is_ignored_but_a_bad_line_inside_is_not(tmp_path):
+    whole = "\n".join(json.dumps(line) for line in _recording()) + "\n"
+    torn = whole + '{"k": "pose", "t": 2.5, "p": [1.0,'
+    inside = whole.replace('{"k": "pose", "t": 2.2', 'garbage\n{"k": "pose", "t": 2.2')
+    assert (
+        read_run(_run(tmp_path / "a", _recorded_topics(), torn))["cross_check"][
+            "verdict"
+        ]
+        == "PASS"
+    )
+    check = read_run(_run(tmp_path / "b", _recorded_topics(), inside))["cross_check"]
+    assert check["verdict"] == "INCONCLUSIVE" and "isn't JSON" in check["reason"]
+
+
+def test_a_parameter_the_log_didnt_record_is_null(tmp_path):
+    readings = read_run(_run(tmp_path, LOG_ONLY_TOPICS, parameters={}))
+    assert readings["camera_trigger_mode"] is None
+
+
+def test_camera_triggers_are_listed_as_times(tmp_path):
+    topics = dict(LOG_ONLY_TOPICS)
+    topics["camera_capture"] = (
+        [("uint64_t", "timestamp")],
+        [(1_250_000,), (1_300_000,)],
+    )
+    readings = read_run(_run(tmp_path, topics, parameters={"TRIG_MODE": 1}))
+    assert readings["camera_triggered_at"] == [{"t_s": 0.25}, {"t_s": 0.3}]
+    assert readings["camera_trigger_mode"] == 1
+    assert readings["missing_topics"] == []
+
+
+def test_a_recorded_run_without_ground_truth_lists_it_as_missing(tmp_path):
+    topics = _recorded_topics()
+    del topics["vehicle_local_position_groundtruth"]
+    readings = read_run(_run(tmp_path, topics, _recording()))
+    assert "vehicle_local_position_groundtruth" in readings["missing_topics"]
+    assert readings["position"] == []
+    assert readings["cross_check"]["verdict"] == "INCONCLUSIVE"
+
+
+def test_a_field_the_config_names_but_the_log_lacks_cant_be_read(tmp_path):
+    topics = dict(LOG_ONLY_TOPICS)
+    topics["vehicle_status"] = (STATUS[:3], [(1_050_000, 4, 0)])  # no arming_state
+    with pytest.raises(ReaderError, match="arming_state"):
+        read_run(_run(tmp_path, topics))
