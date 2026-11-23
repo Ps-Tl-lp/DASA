@@ -14,7 +14,7 @@ Values marked `PROPOSED` in the file are not decided yet. They are tracked in [d
 | `base_lat_lon` | Plan step, harness | Where the base is on the map |
 | `readings`, `time_zero_topics` | Log reader | What we read from the harness's Gazebo recording and from the log, each row naming its source |
 | `log_only_readings`, `cross_check` | Log reader | A run with no recording, and the log's ground truth checked against the recording |
-| `sim` | Harness, log reader | Where Gazebo's pose is recorded |
+| `sim` | Harness, log reader | The simulator setup the tolerances were measured on, and where Gazebo's pose is recorded |
 | `not_in_log`, `derived`, `goal_check`, `postconditions` | Verifier | How the readings are judged against the goal state and the postconditions |
 | `helpers` | Whoever builds one | Every function the config names, who calls it and what it answers |
 | `tolerances` | All of them | The shared numbers |

@@ -28,7 +28,7 @@ What we mean by these words across the repo. If one doesn't match how you use it
 | Recording | The harness's record of Gazebo's pose of the vehicle, made outside PX4. Position, velocity and `landed` are read from it. |
 | Sample | One timed value of a reading. |
 | Reading | A value read from the log or from the harness's Gazebo recording, over the whole flight. Each reading names its source in `platform_configs/px4.yaml`. The verifier works from readings and never opens either file. |
-| Vehicle type | A drone we can launch, with what it's fitted with (camera, grippers). Listed in `px4.yaml`. The generator picks one, and the start state copies its equipment. |
+| Vehicle type | A drone we can launch, with what it's fitted with (camera, grippers). Listed in `px4.yaml`. The generator flies the least-equipped one that can do the mission, and the start state copies its equipment. |
 | Mission settings | What kind of mission to generate: how many waypoints, which properties change, any narrower ranges. Platform-neutral, kept with the generator. Can narrow `px4.yaml`'s ranges, never widen them. |
 | No-fly zone | An area the drone must stay out of. Dropped for the demo (Nov 21). A rule, not a solid obstacle. |
 | Task | What we ask the drone to do, such as go to waypoint A. Tasks go in the plan. |

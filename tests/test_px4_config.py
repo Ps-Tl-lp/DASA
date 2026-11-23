@@ -203,6 +203,14 @@ def test_every_task_has_needs_and_sets_on_state_properties():
                 assert prop.split(".")[0] in {"agent", "waypoint", "base"}, (name, prop)
 
 
+def test_a_log_gap_and_the_simulator_setup_are_named():
+    assert CONFIG["postconditions"]["hold_at"]["max_gap"] == "tolerances.log_gap_max_s"
+    assert 0 < lookup("tolerances.log_gap_max_s") < 1
+    sim = CONFIG["sim"]
+    assert isinstance(sim["speed_factor"], (int, float)) and sim["speed_factor"] > 0
+    assert isinstance(sim["px4_build"], str) and sim["px4_build"]
+
+
 def test_px4_gets_the_same_waypoint_zone_as_the_checks():
     # Sideways goes into each goto item, height into a PX4 setting.
     assert CONFIG["tasks"]["goto"]["plan_item"]["params"][1] == f"{ZONE}.within_m"

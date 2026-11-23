@@ -16,7 +16,7 @@
 #   goal_check, postconditions
 #   helpers                    whoever builds one   every function this file names, and who calls it
 #   tolerances                 all of them          the shared numbers
-#   sim                        harness, log reader  where Gazebo's pose is recorded
+#   sim                        harness, log reader  the simulator setup, and where Gazebo's pose is recorded
 # docs/px4-mappings.md has the reasoning and the PX4 doc links. docs/definitions.md has the terms.
 # platform_configs/README.md says what belongs in this file, in the mission, and in code.
 #
@@ -44,8 +44,10 @@ platform: px4
 log_format: ulog # .ulg files. They also record the PX4 parameters the flight used.
 
 # ---- Vehicle types --------------------------------------------------------------
-# The drones we can launch and what each is fitted with. The generator picks a type, and the
-# start state copies its equipment into agent.has_camera and agent.has_grippers. The harness
+# The drones we can launch and what each is fitted with. The generator flies the least-equipped
+# type that can do the mission: fewest has_* true, ties in the order listed here. If the plan
+# check fails (preconditions.tasks), it tries the next. The start state copies the type's
+# equipment into agent.has_camera and agent.has_grippers. The harness
 # launches sim_model, so the state always matches the drone that actually flies.
 vehicle_types:
   multicopter:
@@ -326,6 +328,10 @@ cross_check:
 
 # ---- Checks (verifier) ----------------------------------------------------------
 # The verifier gets the readings and the mission, and does all the judging.
+# A run's verdict: INCONCLUSIVE if the log doesn't match Gazebo's recording (cross_check);
+# otherwise FAIL if any check is FAIL, else INCONCLUSIVE if any is INCONCLUSIVE, else PASS.
+# Every check runs whatever the others give, so the report lists every problem. A run the
+# harness marks inconclusive (an `assumed` precondition failed) is INCONCLUSIVE without checks.
 
 # State properties that aren't read from the log.
 # The positions of the base and the waypoints are part of the mission and never change, so they
@@ -389,14 +395,17 @@ postconditions:
   # FAIL if none does and the log ends on the ground.
   # INCONCLUSIVE if none does and the log ends in the air, or if the log stops while the drone
   # is still there and the hold isn't complete.
-  # What a gap in the log does to this is not part of the rule yet (docs/px4-mappings.md
-  # section 5 has a proposal).
+  # A gap longer than max_gap between readings ends a stretch. A stretch that already proves the
+  # hold still passes. If none does and the log has such a gap anywhere, the result is
+  # INCONCLUSIVE, not FAIL: a FAIL needs a log with no holes. A stretch still open when the log
+  # stops counts up to its last reading.
   # mission.yaml: - hold_at: {waypoint: W1, min_s: 5}
   hold_at:
     reads: [agent.x, agent.y, agent.z, nav_state]
     helper: at_waypoint
     in_nav_state: 3 # NAVIGATION_STATE_AUTO_MISSION (msg/versioned/VehicleStatus.msg)
     short_by_at_most: tolerances.hold_short_by_s
+    max_gap: tolerances.log_gap_max_s
     rule: the longest stretch of readings inside the zone while PX4 is in mission mode lasts at least the mission's hold minus short_by_at_most
   # The mission lists its waypoints in the order it wants. Find the first time the drone is at
   # the first one, then the first time after that at the second, and so on. PASS if every
@@ -488,6 +497,12 @@ tolerances:
   # the planned hold -0.05 to +0.24 s. 0.25 s covers the worst short reading (0.044 s) with room
   # for one dropped log sample at 4x (0.136 s). Numbers: e2e-prototype reviews/2026-11-23/evidence.py.
   hold_short_by_s: 0.25
+  # Noise allowance: the longest gap between position readings that doesn't end a hold
+  # stretch. At 4x readings are 0.068 s apart, and a dropped one makes 0.136 s: one in 15,247
+  # samples across 11 native flights on fca3df865a (sim-spikes/2026-11-22-baseline-check), and
+  # none over 0.076 s in the 28 flights above. 0.136 s is more than half of 0.2 s, so ADR 0005's
+  # investigate rule applies before the first baseline. Faster than 4x needs a larger value.
+  log_gap_max_s: 0.2
   # Noise allowances: landed, worked out from the recorded position (readings.agent.landed). 28
   # Gazebo flights at 4x (16 on fca3df865a, 12 on 6d1773f4c1): while PX4 said landed, the drone was
   # within 0.001 m of its start height and moved no faster than 0.001 m/s. With these values
@@ -505,8 +520,14 @@ tolerances:
   cross_check_time_s: 0.0005
 
 # ---- Simulator (harness) --------------------------------------------------------
-# Where the harness records Gazebo's pose (readings, source gz_pose).
+# The setup every tolerance here was measured on (ADR 0005: another setup needs its own
+# baseline), and where the harness records Gazebo's pose (readings, source gz_pose). The model
+# comes from vehicle_types.sim_model, home from base_lat_lon.
 sim:
+  simulator: gz          # Gazebo, through PX4's gz_bridge
   world: default
   pose_topic: /world/default/pose/info # the topic PX4's gz_bridge turns into the log's ground truth
   vehicle_model_prefix: x500 # every vehicle type's sim_model is an x500
+  speed_factor: 4        # PX4_SIM_SPEED_FACTOR. Log readings are 0.068 s apart at 4x
+  headless: true
+  px4_build: fca3df865a  # the pin. The evidence so far is 16 flights on it and 12 on 6d1773f4c1 (PX4's Docker image); each tolerance says which
