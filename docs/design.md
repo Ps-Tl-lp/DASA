@@ -13,7 +13,7 @@ The system has three parts:
  
 | Part | Takes in | Hands on |
 |------|----------|----------|
-| **Mission verifier** (current focus) | A mission, represented as R = {precondition, start state, goal state, postcondition}, and the PX4 flight log (`.ulg`) of a run | A PASS / FAIL / INCONCLUSIVE verdict on whether the mission was accomplished, with a reason |
+| **Mission verifier** (current focus) | A mission (a start state, a goal state and its postconditions) and the PX4 flight log (`.ulg`) of a run. It does not check or report preconditions. | A PASS / FAIL / INCONCLUSIVE verdict on whether the mission was accomplished, with a reason |
 | **Blue workstream: diversification** | The baseline PX4 component chosen for Experiment 1 | Candidate variants. Only those the verifier passes count as valid. |
 | **Red workstream: attacks and failures** | A baseline or variant build, plus a scenario (unusual inputs, parameter changes, command sequences, environmental perturbations, malformed data) | Whether the scenario caused a failure, judged by the verifier |
  
@@ -32,7 +32,7 @@ Source: project doc §2.
  
 ```mermaid
 flowchart LR
-    M["Mission<br/>R = {Ppre, S0, Sg, Ppost}"] --> S[PX4 SITL]
+    M["Mission<br/>S0, Sg, Ppost"] --> S[PX4 SITL]
     S --> L[Flight log<br/>.ulg]
     M --> V[Verifier]
     L --> V
@@ -44,7 +44,7 @@ flowchart LR
 ```mermaid
 flowchart LR
     S1["1. Represent the environment<br/>and the agent's actions"] --> S2["2. Generate mission<br/>scenarios"]
-    S2 --> S3["3. Represent each mission<br/>as R = {Ppre, S0, Sg, Ppost}"]
+    S2 --> S3["3. Represent each mission<br/>as S0, Sg and Ppost"]
     S3 --> S4["4. Run the simulation<br/>and collect logs"]
     S4 --> S5["5. Map log parameters to the goal state<br/>and decide if the mission was accomplished"]
 ```
@@ -73,7 +73,7 @@ Source: verifier plan, "Starting suggestions"; [ADR 0003](adr/0003-independent-v
  
 | Input | Contract |
 |-------|----------|
-| Mission | Represented as R = {precondition, start state, goal state, postcondition} (see [Data model](#data-model)). The file format is not decided yet. |
+| Mission | A start state, a goal state and its postconditions (see [Data model](#data-model)). Preconditions are in the platform config, not the mission. The file format is not decided yet. |
 | Run | The PX4 flight log (`.ulg`) from the simulation. Which fields give evidence for each part of the state comes with the mapping write-up. |
 | Mappings | Log parameters → parts of the goal state, each with a one-line reason. The format is pending; on Oct 28 the team proposed a declarative YAML spec. |
  
@@ -96,11 +96,11 @@ Source: project doc §6; verifier plan, "Starting suggestions" and "What our fli
  
 ### Mission representation
  
-Since the Oct 30 meeting, each mission is represented as **R = {Ppre, S0, Sg, Ppost}**. This replaces §6's seven checks and the earlier draft definition. The details are still being settled.
+The Oct 30 meeting introduced the representation **R = {Ppre, S0, Sg, Ppost}**, which replaced §6's seven checks and the earlier draft definition. Since then the preconditions have moved out of the mission: they live in the platform config and the generator applies them, so a mission is S0, Sg and Ppost.
  
 | Part | Meaning |
 |------|---------|
-| Precondition (Ppre) | What must be true for the mission to be attempted. Specific to the mission. |
+| Precondition (Ppre) | A rule a mission must pass to be accomplishable. It lives in the platform config, not in the mission. |
 | Start state (S0) | A full snapshot of the environment (the agent and the objects in it) before the run |
 | Goal state (Sg) | A full snapshot of the environment the mission must reach. One per mission. |
 | Postcondition (Ppost) | What must hold once the mission is over. Specific to the mission. |
@@ -111,14 +111,14 @@ A run is the trajectory of states from the start state to the goal state: S0 →
  
 1. Represent the environment for a given simulator (e.g. PX4) or domain (e.g. self-driving cars), and the actions the agent can take.
 2. Create (generate) mission scenarios: simple, medium, complex.
-3. Represent each mission as R = {Ppre, S0, Sg, Ppost}.
+3. Represent each mission as a start state and a goal state, with its postconditions. The preconditions are applied in step 2.
 4. Run the simulation to collect execution logs.
 5. Map log parameters to the goal state and decide whether the mission was accomplished.
 ### Example: photo mission
  
 The drone flies from a to b, takes a picture at b, and returns to a.
  
-- **Precondition:** the drone can take pictures.
+- **Preconditions:** none in the mission. The platform config's apply when it is generated: here, the plan step finds a plan only on a vehicle type with a camera.
 - **Start state:** the drone is at a, and no picture has been taken at b.
 - **Goal state:** the drone is back at a, and a picture has been taken at b.
 - **Postcondition:** the drone was not attacked.

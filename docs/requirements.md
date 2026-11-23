@@ -55,7 +55,7 @@ The current priority is the mission verifier. Per the Oct 30 decision, the high-
  
 | ID | Requirement | Acceptance criterion |
 |----|-------------|----------------------|
-| R1 | Every mission is represented as R = {precondition, start state, goal state, postcondition}, following the five-step verification approach. Each mission has one goal state. Start and goal states are full snapshots of the environment. Pre- and postconditions are specific to the mission. | Each team member can write one of the three baseline missions in this form, as in Manish's photo example. The written forms are in `docs/` and Manish has reviewed them. |
+| R1 | Every mission is a start state and a goal state, with its postconditions, following the five-step verification approach. Each mission has one goal state. Start and goal states are full snapshots of the environment. Postconditions are specific to the mission. Preconditions come from the platform config and are applied when the mission is generated. | Each team member can write one of the three baseline missions in this form, as in Manish's photo example. The written forms are in `docs/` and Manish has reviewed them. |
 | R2 | Mappings are explicit: every log parameter or recorded value the verifier uses is mapped to the part of the goal state it gives evidence for, with a one-line reason. | A reader outside the team can trace every decision to the log fields it uses from the docs alone. No mapping exists only in code or in someone's head. |
  
 #### Verifier
@@ -63,7 +63,7 @@ The current priority is the mission verifier. Per the Oct 30 decision, the high-
 | ID | Requirement | Acceptance criterion |
 |----|-------------|----------------------|
 | R3 | The verifier works only with the general mission representation. Platform-specific details reach it through the mappings. | Decision code contains no ULog field names. Supporting a new platform means adding mappings, not changing decision code. |
-| R4 | The verifier maps log parameters and recorded values to the goal state and decides whether the mission was accomplished (step 5). | For each of the three baseline missions, the report says whether the final state matched the goal state and whether the pre- and postconditions held. |
+| R4 | The verifier maps log parameters and recorded values to the goal state and decides whether the mission was accomplished (step 5). | For each of the three baseline missions, the report says whether the final state matched the goal state and whether the postconditions held. |
 | R5 | Every decision is PASS, FAIL, or INCONCLUSIVE, with a reason. Missing or invalid evidence gives INCONCLUSIVE, never PASS. | A truncated or corrupted log, or a log that disagrees with the simulator's recording, produces INCONCLUSIVE, not PASS. Every verdict includes a reason (e.g. "goal state not reached: no picture taken at b"). |
 | R6 | Mission-completion tolerances are chosen on runs of the unmodified autopilot, each with a reason. | No tolerance value is hard-coded in decision code. Each tolerance has a reason and names the reference runs it was tuned on. |
 | R7 | The verifier runs on logs and recordings after the flight and does not stop at the first failure. | A run that fails partway still produces a full report. |
