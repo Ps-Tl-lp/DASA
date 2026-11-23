@@ -11,7 +11,7 @@ Be respectful and critique code, not people. We follow the OSU Student Code of C
 Start with the [README quickstart](README.md#quickstart). Beyond it:
 
 - Python 3.12 or newer. CI runs 3.12. On Windows, work inside WSL2 Ubuntu.
-- Dev dependencies (pytest and ruff) are pinned to exact versions in [`requirements-dev.txt`](requirements-dev.txt) and installed into `.venv`. Tool settings are in [`pyproject.toml`](pyproject.toml). There is no lock file yet.
+- Dev dependencies (pytest, PyYAML and ruff) are pinned to exact versions in [`requirements-dev.txt`](requirements-dev.txt) and installed into `.venv`. Tool settings are in [`pyproject.toml`](pyproject.toml). There is no lock file yet.
 - Adding or upgrading a dependency is ask-first (see `AGENTS.md`) and goes in its own `chore/` PR.
 - No environment variables, secrets, or local services are needed yet. A PR that adds one documents it here, with how to get its value, and commits only a `.env.example`.
 - The checks below don't need PX4. Flying missions does: install it with quick-setup as [ADR 0001](docs/adr/0001-dev-environment.md) describes.

@@ -19,6 +19,7 @@ To run part of the suite, give pytest a file (`pytest tests/test_missions.py`) o
 - `tests/`: pytest tests in files named `test_*.py`. Name each test for the behavior it checks, such as `test_mission_ends_with_return_to_launch`.
 - `tests/fixtures/`: small sample data the tests use, committed to git (none yet). Each fixture comes with a note saying where it came from: PX4 commit, simulator, mission plan, and how it was trimmed. Raw `.ulg` files and run results stay out of git; `.gitignore` ignores `*.ulg` everywhere except `tests/fixtures/`.
 - `missions/`: the three mission plans. `tests/test_missions.py` checks each one against its written definition in [missions/README.md](../missions/README.md).
+- `platform_configs/`: the PX4 config. `tests/test_px4_config.py` checks that it loads, that every tolerance and PX4 setting it names exists, that its checks only use readings it defines, and that its tasks use the same commands and frames as `missions/simple.plan`. It does not check whether the values are right.
 
 ## Rules
 
@@ -57,10 +58,13 @@ Log contents:
 
 This list is the one place open decisions are tracked. Until one is decided, code or a test that depends on it gets a clearly marked placeholder (a comment starting `PLACEHOLDER:` that names the open decision), and the PR lists it. Don't pick a value or rule silently.
 
-- Tolerances (arrival radius, altitude band) and where they are defined.
+- Tolerance values, and where they are defined. ADR 0004 proposes `platform_configs/px4.yaml`, and every value marked `PROPOSED` there is still open.
+- How to show a picture was taken, not just that PX4 triggered the camera.
+- What evidence can show a collision. The log can't; the simulator's contact record can.
 - The never-lands rule: when a log that ends airborne counts as FAIL rather than INCONCLUSIVE.
 - The RTL timing rule.
-- The dwell window across the RTL switch.
+- The dwell window across the RTL switch. `platform_configs/px4.yaml` proposes counting all the time at the waypoint, including after the return starts.
+- When a log counts as a complete flight, and how the checks combine into one verdict for a run. A log cut off after landing reads as a normal end today (R5 wants INCONCLUSIVE).
 - Fixture format (trimmed `.ulg` or extracted traces) and how they're produced. Fixtures come with the "Validate the verifier" work.
 - The verifier's language and libraries, command line and report format ("Implement verifier" card).
 - Whether testers also stay out of the verifier's code, and who reviews verifier PRs.

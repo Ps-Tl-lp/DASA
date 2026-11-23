@@ -1,55 +1,34 @@
-# HYDRA PX4 config proposal
+# Platform configs
 
-Nov 20, 2026. My proposal for the team to pick apart. It covers the PX4 config for the Nov 24 demo, not the generator, plan step or verifier.
+One file per platform. `px4.yaml` is the only one so far. It holds everything PX4-specific the pipeline needs: which drones exist, the rules a generated mission has to pass, how a task becomes a `.plan` item, what to read from the log, and how the readings are judged.
 
-## What's in this folder
+Values marked `PROPOSED` in the file are not decided yet. They are tracked in [docs/testing.md](../docs/testing.md#not-decided-yet).
 
-| File | What it is |
-|---|---|
-| `px4.yaml` | The proposed config. Start here. |
-| `MAPPINGS.md` | The source, calculation and flight evidence for each mapping. |
-| `DEFINITIONS.md` | The terms we use in this proposal. |
-| `whiteboard.png` | Our pipeline board. The three yellow boxes are this config. |
-| `helpers_example.py` | The `visited` helper and the path reader it uses. |
+## Who uses which part
 
-## Who uses the config?
-
-| Section | Used by | What it says |
+| Part of `px4.yaml` | Used by | What it's for |
 |---|---|---|
-| `preconditions` (proposed) | Generator | Which values to draw and which combinations to reject before flight. |
-| `tasks` and `plan_item_defaults` | Plan step | What each task changes and how to write its QGroundControl `.plan` item. |
-| `log_mappings`, `postcondition_evidence` and `tolerances` | Log reader and verifier | How to read the final state and flight path, and which comparisons still need a tolerance. |
+| `vehicle_types`, `px4_setup` | Generator, harness | Which drone flies, and the PX4 settings for every flight |
+| `preconditions` | Generator | Rules a generated mission has to pass |
+| `tasks`, `plan_item_defaults` | Plan step | Which tasks a mission needs, and how to write each into the `.plan` file |
+| `base_lat_lon` | Plan step, harness | Where the base is on the map |
+| `readings` | Log reader | What we read from the log |
+| `not_in_log`, `derived`, `goal_check`, `postconditions` | Verifier | How the readings are judged against the goal state and the postconditions |
+| `tolerances` | All of them | The shared numbers. Each one says who uses it |
 
-The generator needs the simulator's effective PX4 settings **before** flight. Afterward, the ULog can confirm the settings it recorded for that run. The plan step also needs the home latitude and longitude before the run.
+PX4 parameter names appear only in `px4.yaml`. The generator, the mission settings and the states stay platform-neutral. Another platform (ArduPilot) would need its own version of this file, plus its own plan writer and log reader if its plan or log format differs from PX4's.
 
-## Mission generation, as this proposal assumes it
+## How a mission goes through it
 
-The demo starts with one multicopter on the ground, at rest at home. The generator varies the mission properties that can change. It checks the proposed start/goal pair against the preconditions. The plan step still has to find tasks that produce the requested changes. Arming, battery sufficiency and path feasibility are still open.
+1. The generator reads a mission settings file (simple, medium or survey) and the ranges in `px4.yaml`. It picks a vehicle type and draws a start state and a goal state inside the mission's geofence. The settings also give the mission's postconditions, such as the hold at each waypoint. The generator writes them out next to the two states.
+2. It checks the candidate (waypoint spacing, the geofence) and asks the plan step whether it can build a plan. If anything fails, it draws again.
+3. The plan step compares the two states, picks the tasks that make the changes (`sets`) plus whatever has to happen first (`needs`), and writes the `.plan` file. The two states can't show a hold or an order, so it reads both from the mission's postconditions.
+4. The harness sets PX4 up (`px4_setup`), launches the vehicle type's `sim_model` in Gazebo, flies the plan and saves the `.ulg` log.
+5. The log reader turns the log into `readings`, each sample with its time. That is all it does. It doesn't need the mission.
+6. The verifier does all the judging. It works out `visited` and `clicked_pic` from the readings and the mission's waypoints, compares the end of the flight with the goal state, and checks each of the mission's postconditions, using the mission's values and not the plan's: PASS, FAIL or INCONCLUSIVE.
 
-One waypoint gives the shape of the simple mission. Reproducing the existing missions also takes a five-second hold for simple, four waypoints **in order** for medium, and an ordered lawnmower route for survey. So the existing missions are settings of one generator, not separate templates. Those settings are shared across platforms, which is why they are not in `px4.yaml`.
+## Related
 
-## What changed from my earlier proposal
-
-- Preconditions are in this config, not in the mission file.
-- The mission is a start state and a goal state, so the config no longer reads a route from the mission file.
-- Takeoff, goto and return home are called *tasks*. PX4 decides how to fly them.
-- The no-fly zone has no `entered` flag. The generator checks positions against it, and the verifier checks whether the flight entered it.
-- One config file instead of two.
-
-## Still open
-
-- Where to keep generator settings, takeoff height, and the list of properties a mission may change. The plan step and verifier need the same required hold time. How to express waypoint order when a mission requires it is still open.
-- Where the no-fly box belongs. Both steps need its geometry. The generator checks the selected positions and the verifier checks the flown path.
-- How to pick tasks from the two states. Section 4 of `MAPPINGS.md` works through the simple mission using `sets` and `needs`. The demo only covers landing at home.
-- Which position ranges and comparison tolerances to use. Section 5 shows that the way distance is measured changes the measured hold.
-- Which evidence can establish a collision, a captured picture, a carried package or an attack. A start-state equipment declaration records what the mission assumes.
-- Whether a postcondition must be checkable from the log alone. `DEFINITIONS.md` says it must, and the log cannot show a collision (section 2 of `MAPPINGS.md`). Either other flight evidence counts, such as the simulator's contact record, or "no collision" is not a postcondition.
-- Whether `agent.landed` becomes a property. The config relies on it at the start and the goal.
-
-The open decisions that touch the config are marked `PLACEHOLDER:` in `px4.yaml`.
-
-## How far this was checked
-
-The three command templates reproduce the items in `simple.plan`. The example helper runs on the saved Gazebo and SIH simple missions. Section 5 of `MAPPINGS.md` gives the measured distances and times. A separate Gazebo contact run shows a limit of the proposed collision checks.
-
-All four of us still need to review the mappings row by row. Drafted with Claude and reviewed with Codex.
+- [docs/px4-mappings.md](../docs/px4-mappings.md): where each row comes from (PX4 docs, the calculation, what test flights showed)
+- [docs/definitions.md](../docs/definitions.md): what each term means
+- [docs/adr/0004-platform-config.md](../docs/adr/0004-platform-config.md): why this lives in one file per platform
