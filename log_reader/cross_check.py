@@ -50,7 +50,7 @@ def cross_check(
 
     times = recording.times()
     window_us = time_within_s * 1e6
-    largest = 0.0
+    largest = None  # stays None if no difference was a real number
     for (t_us, x), (_, y), (_, z) in zip(north, east, down, strict=True):
         sample = _nearest(recording, times, t_us)
         if abs(sample[0] - t_us) > window_us:
@@ -71,7 +71,7 @@ def cross_check(
         if not difference <= max_difference_m:
             result["over_limit"] += 1
         if math.isfinite(difference):
-            largest = max(largest, difference)
+            largest = difference if largest is None else max(largest, difference)
     result["max_difference_m"] = largest
 
     total = len(north)
@@ -84,6 +84,11 @@ def cross_check(
         result["reason"] = (
             f"{result['over_limit']} of {total} log samples are not within "
             f"{max_difference_m:g} m of the recording"
+        )
+    elif recording.lookup_failed:
+        result["reason"] = (
+            "the recorder couldn't list the pose topic's publishers at least once, so "
+            "a second publisher can't be ruled out"
         )
     elif result["publishers"] is None:
         result["reason"] = "the recording never listed the pose topic's publishers"

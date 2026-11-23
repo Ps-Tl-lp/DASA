@@ -24,7 +24,7 @@ import yaml
 
 from .cross_check import cross_check
 from .recording import Recording
-from .ulog import Log
+from .ulog import Log, MissingField
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_CONFIG = REPO_ROOT / "platform_configs" / "px4.yaml"
@@ -101,10 +101,8 @@ def read_run(run_folder, config=None):
             span = _log_span(log, section["log"]["topic"])
             usable = recording.problem is None and span is not None
             readings.update(_recording_readings(config, rows, recording, span, usable))
-    except KeyError as error:
-        raise ReaderError(
-            f"the log has no field {error} that the config names"
-        ) from error
+    except MissingField as error:
+        raise ReaderError(str(error)) from error
 
     return _assemble(run, rows, readings, missing_topics, time_zero_us, recorded, cross)
 

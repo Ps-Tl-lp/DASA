@@ -8,6 +8,10 @@ into plain Python lists, so the rest of the log reader is ordinary Python.
 from pyulog import ULog
 
 
+class MissingField(Exception):
+    """A topic the log has, without a field the config names (another PX4 build?)."""
+
+
 class Log:
     """The parts of one .ulg file the log reader asked for."""
 
@@ -38,6 +42,8 @@ class Log:
         columns = self.columns.get(topic)
         if columns is None:
             return []
+        if field not in columns:
+            raise MissingField(f"the log's {topic} has no field {field}")
         values = columns[field]
         if self.types.get((topic, field)) == "bool":
             values = [bool(v) for v in values]  # pyulog stores bools as 0/1 integers

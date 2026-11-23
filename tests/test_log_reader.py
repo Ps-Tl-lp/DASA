@@ -375,12 +375,13 @@ def test_a_second_publisher_that_comes_and_goes_is_inconclusive(tmp_path):
     assert (check["verdict"], check["publishers"]) == ("INCONCLUSIVE", 2)
 
 
-def test_a_publisher_lookup_that_failed_is_inconclusive(tmp_path):
+def test_a_publisher_lookup_that_failed_is_inconclusive_but_keeps_the_poses(tmp_path):
     failed = {"k": "pubs", "pubs": [["error", "TimeoutError()"]]}
-    check = read_run(_run(tmp_path, _recorded_topics(), _recording(pubs=failed)))[
-        "cross_check"
-    ]
-    assert check["verdict"] == "INCONCLUSIVE" and "publishers" in check["reason"]
+    readings = read_run(_run(tmp_path, _recorded_topics(), _recording(extra=[failed])))
+    check = readings["cross_check"]
+    assert check["verdict"] == "INCONCLUSIVE" and "ruled out" in check["reason"]
+    assert (check["compared"], check["unmatched"], check["publishers"]) == (4, 0, 1)
+    assert len(readings["position"]) == 4
 
 
 def test_a_recording_that_never_lists_publishers_says_so(tmp_path):
@@ -455,3 +456,27 @@ def test_a_field_the_config_names_but_the_log_lacks_cant_be_read(tmp_path):
     topics["vehicle_status"] = (STATUS[:3], [(1_050_000, 4, 0)])  # no arming_state
     with pytest.raises(ReaderError, match="arming_state"):
         read_run(_run(tmp_path, topics))
+
+
+def test_a_log_that_is_nan_throughout_has_no_largest_difference(tmp_path):
+    nan = float("nan")
+    rows = [(t, nan, nan, nan, 0.0, 0.0, 0.0) for t, *_ in GT_ROWS]
+    check = read_run(_run(tmp_path, _recorded_topics(rows), _recording()))[
+        "cross_check"
+    ]
+    assert (check["over_limit"], check["max_difference_m"]) == (4, None)
+
+
+def test_a_bad_line_is_named_by_its_line_number_in_the_file(tmp_path):
+    lines = [json.dumps(line) for line in _recording()]
+    text = "\n".join([lines[0], "", "", "garbage", *lines[1:]]) + "\n"
+    check = read_run(_run(tmp_path, _recorded_topics(), text))["cross_check"]
+    assert "line 4 " in check["reason"]
+
+
+def test_a_publisher_line_that_isnt_a_list_of_pairs_is_inconclusive(tmp_path):
+    odd = {"k": "pubs", "pubs": [{"address": "tcp://a"}]}
+    check = read_run(_run(tmp_path, _recorded_topics(), _recording(pubs=odd)))[
+        "cross_check"
+    ]
+    assert check["verdict"] == "INCONCLUSIVE" and "publisher list" in check["reason"]
