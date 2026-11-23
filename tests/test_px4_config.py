@@ -162,7 +162,22 @@ def test_every_reading_names_its_source():
     assert set(CONFIG["log_only_readings"]) == set(CONFIG["readings"])
 
 
+def test_rate_of_names_a_reading():
+    for section in ("readings", "log_only_readings"):
+        for name, row in CONFIG[section].items():
+            if "rate_of" in row:
+                assert row["rate_of"] in CONFIG[section], (section, name)
+
+
+def test_the_disarm_check_reads_the_arming_state():
+    disarm = CONFIG["postconditions"]["disarmed_after_landing"]
+    assert {"arming_state", "disarm_reason", "agent.landed"} <= set(disarm["reads"])
+    assert disarm["disarmed_state"] == 1  # ARMING_STATE_DISARMED
+
+
 def test_the_log_is_checked_against_the_recording():
+    cross = CONFIG["cross_check"]
+    assert {"log", "same_time_within_s", "max_difference_m", "rule"} <= set(cross)
     assert lookup(CONFIG["cross_check"]["max_difference_m"]) > 0
     assert lookup(CONFIG["cross_check"]["same_time_within_s"]) > 0
     assert CONFIG["cross_check"]["log"]["topic"] in CONFIG["time_zero_topics"]

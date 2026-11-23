@@ -30,6 +30,8 @@
 #   helper: NAME        A function a builder writes. `helpers` lists every one and who calls it.
 #   rule: SENTENCE      One plain sentence saying what a check must do. No program runs it.
 #   reads: [NAMES]      The readings a check uses. The names come from `readings`.
+#   rate_of: agent.x    A reading's name (from `readings`), not a state property. The same goes
+#                       for the names in `reads`, even where they look like state properties.
 #   start_state, last_reading, exact
 #                       A keyword. The comment next to it says what it means.
 #
@@ -148,7 +150,8 @@ preconditions:
 # changes, not the path PX4 takes to do it.
 #
 # How the plan step builds a plan, in a fixed order: takeoff; a goto for each waypoint whose
-# visited or clicked_pic changes, in visits_in_order order (else waypoint id order);
+# visited or clicked_pic changes, or that a hold_at or visits_in_order postcondition names, with
+# the waypoints in visits_in_order first, in that order, then the rest in waypoint id order;
 # take_picture straight after its waypoint's goto; return_home. A property that didn't change
 # gets no task: if a waypoint's clicked_pic is false in both states, there's no take_picture,
 # even though the waypoint exists. If no property changes, the plan has no items at all, not
@@ -156,7 +159,9 @@ preconditions:
 # Then it checks the list. Start from the start state; for each task in turn, its needs must
 # hold, then its sets apply. The result must equal the goal state on every property the goal
 # lists. Positions compare exactly: they are the mission's numbers, not flown ones. Any failure
-# means no plan, and the reason names the task and the property. The states can't show order or
+# means no plan, and the reason names the task and the property. So does a hold_at or
+# visits_in_order that names a waypoint the mission doesn't have, or one the goal says isn't
+# visited. The states can't show order or
 # time, so the check can't either: the order comes from the fixed order above, and the verifier
 # checks order and holds after the flight.
 # docs/px4-mappings.md section 4 walks through the simple mission.
@@ -270,11 +275,13 @@ readings:
   agent.landed:     { source: gz_pose, on_ground_m: tolerances.landed.height_m, still_below_m_s: tolerances.landed.speed_m_s }
   nav_state:        { source: log, topic: vehicle_status, field: nav_state } # not part of the state. PX4's flight mode, logged on every change
   disarm_reason:    { source: log, topic: vehicle_status, field: latest_disarming_reason } # not part of the state
+  arming_state:     { source: log, topic: vehicle_status, field: arming_state } # not part of the state. 1 disarmed, 2 armed (msg/versioned/VehicleStatus.msg)
   camera_triggered_at: { source: log, topic: camera_capture, field: timestamp } # not part of the state. One value each time PX4 triggers the camera. No trigger, no topic in the log
 time_zero_topics: [vehicle_local_position_groundtruth, vehicle_land_detected]
 
-# A run flown before the harness recorded Gazebo (the M01 fixture's R02, for one) is read from
-# the log alone, with these rows in place of the ones above, and its readings say so.
+# A run flown before the harness recorded Gazebo (its run.json has no `recording` key; the M01
+# fixture's R02, for one) is read from the log alone, with these rows in place of the ones
+# above, and its readings say so.
 log_only_readings:
   agent.x:          { source: log, topic: vehicle_local_position_groundtruth, field: x,  subtract_first: true }
   agent.y:          { source: log, topic: vehicle_local_position_groundtruth, field: y,  subtract_first: true }
@@ -285,6 +292,7 @@ log_only_readings:
   agent.landed:     { source: log, topic: vehicle_land_detected, field: landed }
   nav_state:        { source: log, topic: vehicle_status, field: nav_state }
   disarm_reason:    { source: log, topic: vehicle_status, field: latest_disarming_reason }
+  arming_state:     { source: log, topic: vehicle_status, field: arming_state }
   camera_triggered_at: { source: log, topic: camera_capture, field: timestamp }
 
 # The log's own ground truth, checked against the recording. PX4's gz_bridge reads the same
@@ -292,7 +300,10 @@ log_only_readings:
 # with the same position (a Gazebo spike on 2026-11-23: 1403 of 1403 samples, within 2.1 um;
 # 5 flights with a full recording, within 5.3 um). Positions are compared in the world frame,
 # before subtract_first; down is the log's z, compared with the recording's up flipped.
-# A run with no recording has no cross-check: it is read from the log alone and judged on it.
+# A harness that records always names the recording in run.json, even if the recorder failed.
+# A run that names one whose file is missing, empty or shorter than the log is INCONCLUSIVE.
+# Only a run with no `recording` key at all (flown before the harness recorded) has no
+# cross-check: it is read from the log alone and judged on it.
 # A run whose log and recording disagree is INCONCLUSIVE, whatever the other checks say, and the
 # disagreement is reported as its own check (evidence_cross_check): a log that doesn't match the
 # simulator is invalid evidence, and a variant that edits its own log is a finding in itself.
@@ -361,9 +372,12 @@ postconditions:
   # Stretches are made of position readings. One starts at the first position reading inside
   # the zone while PX4 is in mission mode, and ends at the first later position reading that is
   # outside the zone or not in mission mode; its length is the time between those two readings.
-  # PX4's mode at a reading is the last nav_state at or before it (mission mode if none yet).
-  # PASS if one stretch lasts at least the mission's hold minus short_by_at_most. FAIL if none does.
-  # INCONCLUSIVE if the log stops while the drone is still there and the hold isn't complete.
+  # PX4's mode at a reading is the last nav_state at or before it. A position reading before
+  # the first nav_state can't start a stretch, and a log with no nav_state gives INCONCLUSIVE.
+  # PASS if one stretch lasts at least the mission's hold minus short_by_at_most.
+  # FAIL if none does and the log ends on the ground.
+  # INCONCLUSIVE if none does and the log ends in the air, or if the log stops while the drone
+  # is still there and the hold isn't complete.
   # What a gap in the log does to this is not part of the rule yet (docs/px4-mappings.md
   # section 5 has a proposal).
   # mission.yaml: - hold_at: {waypoint: W1, min_s: 5}
@@ -383,21 +397,28 @@ postconditions:
     rule: each waypoint is visited after the one before it
   # What makes a log a complete flight: PX4 disarms itself after the landing. It is what makes
   # a log that stops after touchdown but before the disarm INCONCLUSIVE (R5), so every mission
-  # gets it. Touchdown is the first landed reading after the last airborne one.
-  #   PASS          the rule holds
-  #   FAIL          the disarm reason changes between takeoff and touchdown (a disarm in the air)
-  #   INCONCLUSIVE  no change at or after touchdown (the log stops first), or the log shows no
+  # gets it. Touchdown is the first landed reading after the last airborne one; takeoff is the
+  # first airborne reading in the log.
+  # A disarm is a change of arming_state from armed to disarmed_state, and its reason is the
+  # disarm_reason at that change. PX4 keeps the last disarm reason while it is armed
+  # (Commander.cpp at fca3df865a), so the reason alone can't show a re-arm or a second disarm.
+  #   PASS          the last disarm is at or after touchdown with reason last_value, there is no
+  #                 disarm between takeoff and touchdown, and the log ends disarmed
+  #   FAIL          a disarm between takeoff and touchdown (in the air), or a last disarm after
+  #                 touchdown with another reason (something other than PX4's landing disarm)
+  #   INCONCLUSIVE  no disarm at or after touchdown (the log stops first), or the log shows no
   #                 takeoff and touchdown (the other checks report that flight)
-  # Takeoff is the first airborne reading in the log. In 28 Gazebo flights the reason changed
-  # from 0 to 6 2.96-3.12 s after touchdown (2.008-2.016 s after PX4's own land detector said
-  # landed, which is COM_DISARM_LAND).
+  # In 28 Gazebo flights PX4 armed once and disarmed once, with reason 6, 2.96-3.12 s after
+  # touchdown (2.008-2.016 s after its own land detector said landed, which is
+  # COM_DISARM_LAND), and every log ended disarmed.
   # mission.yaml: not listed (every mission gets it)
   disarmed_after_landing:
     every_mission: true
-    reads: [disarm_reason, agent.landed]
+    reads: [arming_state, disarm_reason, agent.landed]
+    disarmed_state: 1 # ARMING_STATE_DISARMED (msg/versioned/VehicleStatus.msg)
     last_value: 6 # PX4 disarmed itself after landing (7 in PX4 v1.13 to v1.16)
     relies_on: [COM_DISARM_LAND] # PX4 disarms this long after landing (2 s default); at <= 0 it never does
-    rule: the disarm reason changes to last_value at or after touchdown, and to nothing else after takeoff
+    rule: the last disarm comes at or after touchdown with reason last_value, none comes between takeoff and touchdown, and the log ends disarmed
 
 # ---- Helpers --------------------------------------------------------------------
 # Every function this file names. None is written yet.

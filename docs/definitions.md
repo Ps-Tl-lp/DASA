@@ -20,6 +20,7 @@ What we mean by these words across the repo. If one doesn't match how you use it
 | At the waypoint | A short cylinder around a waypoint. Its size is `tolerances.at_waypoint` in `platform_configs/px4.yaml`: `within_m` sideways, `height_within_m` up or down. A position exactly on a limit counts as inside. Used for the plan's acceptance radius, `visited`, `clicked_pic`, the hold check and the order check. |
 | Takeoff | The first airborne reading in the log. |
 | Touchdown | The first landed reading after the last airborne one. `disarmed_after_landing` (in `platform_configs/px4.yaml`) checks that PX4 disarms at or after it. |
+| Disarm | A change of PX4's `arming_state` from armed to disarmed. Its reason is the disarm reason PX4 records at that change. |
 | Mission mode | PX4 flying the uploaded mission: `nav_state` 3 (`NAVIGATION_STATE_AUTO_MISSION`). The hold check counts only while PX4 is in it. |
 | Stretch | An unbroken run of position readings inside a waypoint's zone while PX4 is in mission mode. It ends at the first position reading outside the zone or out of mission mode. |
 | Harness | The program that sets PX4 and Gazebo up, flies the plan, records Gazebo's pose and saves the log, with a run record (`run.json`). |
