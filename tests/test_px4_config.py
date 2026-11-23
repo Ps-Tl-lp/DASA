@@ -79,6 +79,10 @@ def test_config_has_the_sections_each_step_reads():
         "postconditions",
         "helpers",
         "tolerances",
+        "log_only_readings",
+        "time_zero_topics",
+        "cross_check",
+        "sim",
     }
     assert sections <= set(CONFIG)
 
@@ -135,6 +139,7 @@ def test_every_check_has_a_rule_and_reads_real_readings():
 def test_hold_counts_in_mission_mode_with_a_named_allowance():
     hold = CONFIG["postconditions"]["hold_at"]
     assert "nav_state" in hold["reads"]
+    assert hold["in_nav_state"] == 3  # NAVIGATION_STATE_AUTO_MISSION
     assert hold["short_by_at_most"] == "tolerances.hold_short_by_s"
     assert 0 < lookup(hold["short_by_at_most"]) < 1
 
@@ -159,6 +164,8 @@ def test_every_reading_names_its_source():
 
 def test_the_log_is_checked_against_the_recording():
     assert lookup(CONFIG["cross_check"]["max_difference_m"]) > 0
+    assert lookup(CONFIG["cross_check"]["same_time_within_s"]) > 0
+    assert CONFIG["cross_check"]["log"]["topic"] in CONFIG["time_zero_topics"]
     assert CONFIG["sim"]["pose_topic"].startswith(f"/world/{CONFIG['sim']['world']}/")
 
 

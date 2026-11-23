@@ -35,7 +35,8 @@
 #
 # PROPOSED values are not decided yet (see docs/testing.md, "Not decided yet"). PLACEHOLDER notes are still to do.
 # Positions are metres from the base (0, 0, 0): x north, y east, z up. PX4 uses north, east,
-# down, so we flip z (see flip_sign under readings). PX4 calls the base "home".
+# down, so a row reading the log flips z (flip_sign). Gazebo's recording is already z up. PX4
+# calls the base "home".
 
 platform: px4
 log_format: ulog # .ulg files. They also record the PX4 parameters the flight used.
@@ -150,7 +151,8 @@ preconditions:
 # visited or clicked_pic changes, in visits_in_order order (else waypoint id order);
 # take_picture straight after its waypoint's goto; return_home. A property that didn't change
 # gets no task: if a waypoint's clicked_pic is false in both states, there's no take_picture,
-# even though the waypoint exists. If nothing changes, the plan has no items.
+# even though the waypoint exists. If no property changes, the plan has no items at all, not
+# even a takeoff.
 # Then it checks the list. Start from the start state; for each task in turn, its needs must
 # hold, then its sets apply. The result must equal the goal state on every property the goal
 # lists. Positions compare exactly: they are the mission's numbers, not flown ones. Any failure
@@ -162,7 +164,8 @@ preconditions:
 #   needs      what has to be true in the state before the task
 #   sets       the change in state the task makes. A $ value here is filled from `inputs`, as
 #              in plan_item: takeoff's $height is the first goto's height
-#   plan_item  the .plan item it turns into (command and frame are MAVLink numbers)
+#   plan_item  the .plan item it turns into (command and frame are MAVLink numbers). null is how
+#              a .plan file writes NaN: for param 4 (yaw), PX4 keeps its current heading mode
 #   relies_on  PX4 parameters we don't set that shape how the task flies
 # In needs and sets, a value that starts with agent., waypoint. or base. is that property's
 # value in the running state, and anything else is a plain value. A waypoint that doesn't list
@@ -238,15 +241,25 @@ inputs:
 #            field is north, east or up in Gazebo's world frame.
 #   log      PX4's .ulg: topic and field.
 # Position, velocity and landed come from the recording, so a PX4 that changes its log can't
-# change them. Velocity is the change in position from one reading to the next (rate_of).
-# landed is worked out from position: on the ground (no higher than on_ground_m above where the
-# drone started) and still (slower than still_below_m_s). The flight mode, the disarm reason and
-# the camera trigger are PX4's own reports.
+# change them. There is one position reading per recorded sample. The flight mode, the disarm
+# reason and the camera trigger are PX4's own reports.
+#   rate_of         names another reading. The velocity at a reading is the change in that
+#                   reading since the one before it, divided by the time between them; the
+#                   first reading's velocity is 0.
+#   on_ground_m, still_below_m_s
+#                   landed at a reading: no higher than on_ground_m above where the drone
+#                   started, and its speed (from the three rate_of readings) below still_below_m_s
 #   subtract_first  subtract the first value, so positions are measured from the base
 #                   (where the drone sat before takeoff) instead of the simulator's origin
-#   flip_sign       multiply by -1, because PX4's z points down and ours points up
-# Times are seconds from the earliest sample of time_zero_topics in the log. The readings cover
-# the log's own span, so a log cut short gives readings cut short.
+#   flip_sign       multiply by -1, because PX4's z points down and ours points up (log rows only)
+# The recording (run.json `recording`) is JSON lines written by the harness. A pose line is
+# {"k": "pose", "t": sim seconds, "p": [east, north, up]} for the vehicle: the first model on
+# sim.pose_topic whose name starts with sim.vehicle_model_prefix. A {"k": "pubs"} line lists the
+# topic's publishers. In SITL lockstep PX4's clock is the sim clock, so t * 1e6 is a log
+# timestamp, with no offset (2026-11-23 spike).
+# Times are seconds from the earliest sample of time_zero_topics in the log, a missing topic
+# left out. The readings cover the log's own span (its first to last ground-truth sample), so a
+# log cut short gives readings cut short.
 readings:
   agent.x:          { source: gz_pose, field: north, subtract_first: true }
   agent.y:          { source: gz_pose, field: east,  subtract_first: true }
@@ -276,14 +289,16 @@ log_only_readings:
 
 # The log's own ground truth, checked against the recording. PX4's gz_bridge reads the same
 # Gazebo topic, so in a correct run every log sample has a recorded sample at the same sim time
-# with the same position (a Gazebo spike on 2026-11-23: 1403 of 1403 samples, within 2.1 um).
-# Positions are compared in the world frame, before subtract_first.
+# with the same position (a Gazebo spike on 2026-11-23: 1403 of 1403 samples, within 2.1 um;
+# 5 flights with a full recording, within 5.3 um). Positions are compared in the world frame,
+# before subtract_first; down is the log's z, compared with the recording's up flipped.
+# A run with no recording has no cross-check: it is read from the log alone and judged on it.
 # A run whose log and recording disagree is INCONCLUSIVE, whatever the other checks say, and the
 # disagreement is reported as its own check (evidence_cross_check): a log that doesn't match the
 # simulator is invalid evidence, and a variant that edits its own log is a finding in itself.
 cross_check:
   log: { topic: vehicle_local_position_groundtruth, north: x, east: y, down: z }
-  same_time_within_s: 0.0005 # both sit on Gazebo's 4 ms physics step
+  same_time_within_s: tolerances.cross_check_time_s
   max_difference_m: tolerances.cross_check_m
   rule: every log sample has a recorded sample at the same time, no more than max_difference_m away, and the pose topic has one publisher
 
@@ -343,9 +358,10 @@ postconditions:
     rule: every reading inside the mission's geofence cylinder
   # One per waypoint the mission wants a hold at. Time counts only while PX4 is flying the
   # mission, so the time it takes to leave the zone after switching to the return doesn't.
-  # A stretch starts at the first reading inside the zone while PX4 is in mission mode, and
-  # ends at the first later reading that is outside the zone or not in mission mode. PX4's
-  # mode at a reading is the last nav_state at or before it.
+  # Stretches are made of position readings. One starts at the first position reading inside
+  # the zone while PX4 is in mission mode, and ends at the first later position reading that is
+  # outside the zone or not in mission mode; its length is the time between those two readings.
+  # PX4's mode at a reading is the last nav_state at or before it (mission mode if none yet).
   # PASS if one stretch lasts at least the mission's hold minus short_by_at_most. FAIL if none does.
   # INCONCLUSIVE if the log stops while the drone is still there and the hold isn't complete.
   # What a gap in the log does to this is not part of the rule yet (docs/px4-mappings.md
@@ -372,8 +388,9 @@ postconditions:
   #   FAIL          the disarm reason changes between takeoff and touchdown (a disarm in the air)
   #   INCONCLUSIVE  no change at or after touchdown (the log stops first), or the log shows no
   #                 takeoff and touchdown (the other checks report that flight)
-  # In 21 Gazebo flights the reason changed from 0 to 6 2.96-3.12 s after touchdown (2.008-2.016 s
-  # after PX4's own land detector said landed, which is COM_DISARM_LAND).
+  # Takeoff is the first airborne reading in the log. In 28 Gazebo flights the reason changed
+  # from 0 to 6 2.96-3.12 s after touchdown (2.008-2.016 s after PX4's own land detector said
+  # landed, which is COM_DISARM_LAND).
   # mission.yaml: not listed (every mission gets it)
   disarmed_after_landing:
     every_mission: true
@@ -415,23 +432,30 @@ tolerances:
   # How far inside the geofence the plan has to stay (the stays_in_geofence precondition). Only
   # the generator uses it. The verifier checks the flown path against the geofence itself.
   geofence_clearance_m: 2 # PROPOSED. The two logs peaked 0.05 m and 1.08 m above RTL_RETURN_ALT, and one drifted 0.98 m past W1.
-  # How much shorter than the mission's hold a stretch may be (hold_at). 22 Gazebo flights at 4x
-  # (16 on fca3df865a, 6 on 6d1773f4c1): time in the zone and in mission mode was the planned
-  # hold -0.05 to +0.24 s. One dropped log sample at 4x is 0.14 s.
+  # How much shorter than the mission's hold a stretch may be (hold_at). 28 Gazebo flights at 4x
+  # (16 on fca3df865a, 12 on 6d1773f4c1): time in the zone and in mission mode was the planned
+  # hold -0.05 to +0.24 s. 0.25 s covers the worst short reading (0.044 s) with room for one
+  # dropped log sample at 4x (0.136 s). Numbers: e2e-prototype reviews/2026-11-23/evidence.py.
   hold_short_by_s: 0.25
-  # Landed, worked out from the recorded position (readings.agent.landed). 21 Gazebo flights at
-  # 4x (15 on fca3df865a, 6 on 6d1773f4c1): while PX4 said landed, the drone was within 0.0008 m
-  # of its start height and moved under 0.001 m/s. With these values touchdown comes 0.95-1.10 s
-  # before PX4's land detector says landed, and PX4 disarms 2.96-3.12 s after it.
+  # Landed, worked out from the recorded position (readings.agent.landed). 28 Gazebo flights at
+  # 4x (16 on fca3df865a, 12 on 6d1773f4c1): while PX4 said landed, the drone was within 0.001 m
+  # of its start height and moved no faster than 0.001 m/s. With these values touchdown comes
+  # 0.95-1.10 s before PX4's land detector says landed, and PX4 disarms 2.96-3.12 s after
+  # touchdown.
   landed:
     height_m: 0.1
     speed_m_s: 0.1
   # How far the log's ground truth may be from the recording (cross_check). PX4 logs it as
-  # float32, which rounded it by up to 5.5 um in 8 flights on 6d1773f4c1.
+  # float32, which rounded it by up to 5.3 um in 5 flights with a full recording (6d1773f4c1).
   cross_check_m: 0.0001
+  # How close in sim time a recorded sample must be to a log sample to count as the same one.
+  # Both sit on Gazebo's 4 ms physics step; in 5 flights every log sample had a recorded one at
+  # the same stamp.
+  cross_check_time_s: 0.0005
 
 # ---- Simulator (harness) --------------------------------------------------------
 # Where the harness records Gazebo's pose (readings, source gz_pose).
 sim:
   world: default
   pose_topic: /world/default/pose/info # the topic PX4's gz_bridge turns into the log's ground truth
+  vehicle_model_prefix: x500 # every vehicle type's sim_model is an x500

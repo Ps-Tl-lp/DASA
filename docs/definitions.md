@@ -18,7 +18,14 @@ What we mean by these words across the repo. If one doesn't match how you use it
 | Flight area | How far out the generator is allowed to place a mission: a cylinder around the base. Generated points can't be outside it. Our own limit; PX4 and Gazebo don't set one. |
 | Geofence | An optional per-mission rule: a cylinder around the base the flight must stay inside. It comes from the mission's settings and fits inside the flight area. The same check runs twice: before the flight on where the plan will fly, with `tolerances.geofence_clearance_m` to spare (precondition), and after it on the flown path (postcondition). PX4 has its own geofence (`GF_MAX_` parameters); we keep that off. |
 | At the waypoint | A short cylinder around a waypoint. Its size is `tolerances.at_waypoint` in `platform_configs/px4.yaml`: `within_m` sideways, `height_within_m` up or down. A position exactly on a limit counts as inside. Used for the plan's acceptance radius, `visited`, `clicked_pic`, the hold check and the order check. |
+| Takeoff | The first airborne reading in the log. |
 | Touchdown | The first landed reading after the last airborne one. `disarmed_after_landing` (in `platform_configs/px4.yaml`) checks that PX4 disarms at or after it. |
+| Mission mode | PX4 flying the uploaded mission: `nav_state` 3 (`NAVIGATION_STATE_AUTO_MISSION`). The hold check counts only while PX4 is in it. |
+| Stretch | An unbroken run of position readings inside a waypoint's zone while PX4 is in mission mode. It ends at the first position reading outside the zone or out of mission mode. |
+| Harness | The program that sets PX4 and Gazebo up, flies the plan, records Gazebo's pose and saves the log, with a run record (`run.json`). |
+| Flyer | The part of the harness that uploads the plan to PX4, arms, starts the mission and waits for the disarm. |
+| Recording | The harness's record of Gazebo's pose of the vehicle, made outside PX4. Position, velocity and `landed` are read from it. |
+| Sample | One timed value of a reading. |
 | Reading | A value read from the log or from the harness's Gazebo recording, over the whole flight. Each reading names its source in `platform_configs/px4.yaml`. The verifier works from readings and never opens either file. |
 | Vehicle type | A drone we can launch, with what it's fitted with (camera, grippers). Listed in `px4.yaml`. The generator picks one, and the start state copies its equipment. |
 | Mission settings | What kind of mission to generate: how many waypoints, which properties change, any narrower ranges. Platform-neutral, kept with the generator. Can narrow `px4.yaml`'s ranges, never widen them. |
