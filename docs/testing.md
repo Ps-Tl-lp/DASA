@@ -62,7 +62,7 @@ This list is the one place open decisions are tracked. Until one is decided, cod
 - What evidence can show a collision. The log can't; the simulator's contact record can.
 - The never-lands rule: when a log that ends airborne counts as FAIL rather than INCONCLUSIVE. Today it is INCONCLUSIVE (`disarmed_after_landing` sees no disarm after touchdown). A FAIL needs a harness time limit that says the flight had its chance.
 - How to judge the evidence PX4 reports about itself (flight mode, disarm reason, camera trigger) when the autopilot is modified. Position, velocity and `landed` come from the harness's Gazebo recording and no longer depend on PX4, but in PX4's Docker image PX4 still starts Gazebo and runs beside the recorder (a follow-up: Gazebo in its own container).
-- The verifier's language and libraries, command line and report format ("Implement verifier" card).
+- The verifier's language and libraries, and its command line ("Implement verifier" card). Its report format is in `tests/fixtures/m01/README.md` (`verdict.json`).
 - Whether testers also stay out of the verifier's code, and who reviews verifier PRs.
 - Whether a mission should test PX4's own geofence. It is off in every flight today (`px4_setup`), so a variant that breaks it would go unnoticed.
 - Where the shared helper functions live. `platform_configs/px4.yaml` lists them under `helpers`; none is written yet.

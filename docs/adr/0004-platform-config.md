@@ -19,7 +19,7 @@ Proposed: preconditions, task-to-plan mappings, log readings and tolerances for 
 ## Consequences
 
 - `platform_configs/` is a new top-level folder.
-- If accepted, where tolerances are defined is settled. Their values are not: anything marked `PROPOSED` in the file still needs a decision and stays on the list in `docs/testing.md`.
+- If accepted, where tolerances are defined is settled. Their values are not: anything marked `PROPOSED` in the file still needs a decision and stays on the list in `docs/testing.md`. (Since ADR 0005, none remain.)
 - Another platform needs its own config, plus its own plan writer and log reader if its plan or log format differs.
 
 ## Revisit

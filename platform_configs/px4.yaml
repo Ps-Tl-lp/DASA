@@ -35,7 +35,8 @@
 #   start_state, last_reading, exact
 #                       A keyword. The comment next to it says what it means.
 #
-# PROPOSED values are not decided yet (see docs/testing.md, "Not decided yet"). PLACEHOLDER notes are still to do.
+# A value marked PROPOSED is not decided yet (none is at the moment; see docs/testing.md, "Not
+# decided yet"). PLACEHOLDER notes are still to do.
 # Positions are metres from the base (0, 0, 0): x north, y east, z up. PX4 uses north, east,
 # down, so a row reading the log flips z (flip_sign). Gazebo's recording is already z up. PX4
 # calls the base "home".
@@ -286,7 +287,7 @@ readings:
   agent.velocity.y: { source: gz_pose, rate_of: agent.y }
   agent.velocity.z: { source: gz_pose, rate_of: agent.z }
   agent.landed:     { source: gz_pose, on_ground_m: tolerances.landed.height_m, still_below_m_s: tolerances.landed.speed_m_s }
-  nav_state:        { source: log, topic: vehicle_status, field: nav_state } # not part of the state. PX4's flight mode, logged on every change
+  nav_state:        { source: log, topic: vehicle_status, field: nav_state } # not part of the state. PX4's flight mode, logged about every 0.5 s and on each change
   disarm_reason:    { source: log, topic: vehicle_status, field: latest_disarming_reason } # not part of the state
   arming_state:     { source: log, topic: vehicle_status, field: arming_state } # not part of the state. 1 disarmed, 2 armed (msg/versioned/VehicleStatus.msg)
   camera_triggered_at: { source: log, topic: camera_capture, field: timestamp } # not part of the state. One value each time PX4 triggers the camera. No trigger, no topic in the log
@@ -330,8 +331,10 @@ cross_check:
 # The verifier gets the readings and the mission, and does all the judging.
 # A run's verdict: INCONCLUSIVE if the log doesn't match Gazebo's recording (cross_check);
 # otherwise FAIL if any check is FAIL, else INCONCLUSIVE if any is INCONCLUSIVE, else PASS.
-# Every check runs whatever the others give, so the report lists every problem. A run the
-# harness marks inconclusive (an `assumed` precondition failed) is INCONCLUSIVE without checks.
+# Every check runs and reports, whatever the others give, so the report lists every problem. A
+# run the harness marks inconclusive (an `assumed` precondition failed, or the flight didn't
+# finish) still lists every check, each INCONCLUSIVE with the harness's reason. A run with no
+# recording has no cross-check and is judged on its log alone.
 
 # State properties that aren't read from the log.
 # The positions of the base and the waypoints are part of the mission and never change, so they
@@ -342,6 +345,10 @@ not_in_log:
   agent.has_grippers: vehicle_type
 
 # State properties worked out from several readings, using the mission's waypoints.
+# Outcomes, for both: PASS when the readings agree with the goal's value. FAIL when they don't
+# and the log ends on the ground. INCONCLUSIVE when the goal wants true, the readings don't show
+# it yet and the log ends in the air, because it could still happen. A property already true in
+# the start state needs no task: PASS if the goal keeps it, FAIL if it doesn't.
 derived:
   waypoint.visited:
     reads: [agent.x, agent.y, agent.z]
@@ -363,6 +370,8 @@ derived:
 # not_in_log and derived give the properties that aren't readings.
 # A property the goal state doesn't list is not compared.
 # A log that is cut off before the disarm: disarmed_after_landing is INCONCLUSIVE for it.
+# Outcomes: PASS when every comparison holds at the last reading. FAIL when one doesn't.
+# INCONCLUSIVE when the log ends in the air: the end of the flight isn't in the log.
 goal_check:
   use: last_reading
   within:
@@ -379,6 +388,8 @@ goal_check:
 # with every_mission: true runs on every mission, listed or not.
 postconditions:
   # The same helper as the precondition of this name, run on the flown path with no clearance.
+  # FAIL at the first reading outside. PASS if none is outside and the log ends on the ground.
+  # INCONCLUSIVE if none is outside so far but the log ends in the air. No geofence: PASS.
   # mission.yaml: - stays_in_geofence: {max_distance_m: 60, max_height_m: 35} (from the base)
   stays_in_geofence:
     reads: [agent.x, agent.y, agent.z]
@@ -395,10 +406,12 @@ postconditions:
   # FAIL if none does and the log ends on the ground.
   # INCONCLUSIVE if none does and the log ends in the air, or if the log stops while the drone
   # is still there and the hold isn't complete.
-  # A gap longer than max_gap between readings ends a stretch. A stretch that already proves the
-  # hold still passes. If none does and the log has such a gap anywhere, the result is
-  # INCONCLUSIVE, not FAIL: a FAIL needs a log with no holes. A stretch still open when the log
-  # stops counts up to its last reading.
+  # A gap longer than max_gap between consecutive position readings ends a stretch at the last
+  # position reading before the gap: no time is credited across it. Gaps in nav_state don't
+  # count: PX4 publishes it about every 0.5 s and on each change. A stretch that already proves
+  # the hold still passes. If none does and the position readings have such a gap anywhere, the
+  # result is INCONCLUSIVE, not FAIL: a FAIL needs a log with no holes. A stretch still open when
+  # the log stops ends at its last position reading.
   # mission.yaml: - hold_at: {waypoint: W1, min_s: 5}
   hold_at:
     reads: [agent.x, agent.y, agent.z, nav_state]
@@ -409,7 +422,8 @@ postconditions:
     rule: the longest stretch of readings inside the zone while PX4 is in mission mode lasts at least the mission's hold minus short_by_at_most
   # The mission lists its waypoints in the order it wants. Find the first time the drone is at
   # the first one, then the first time after that at the second, and so on. PASS if every
-  # waypoint gets a time. FAIL if one doesn't.
+  # waypoint gets a time. FAIL if one doesn't and the log ends on the ground; INCONCLUSIVE if it
+  # ends in the air.
   # mission.yaml: - visits_in_order: {waypoints: [W1, W2]}
   visits_in_order:
     reads: [agent.x, agent.y, agent.z]
@@ -461,7 +475,8 @@ helpers:
 #                    rest". Chosen, not measured. The comment gives the measured error as margin.
 #   noise allowance  how much correct flights vary. Set and changed only from baseline runs, by
 #                    ADR 0005's method. The comment names the flights and PX4 builds.
-# Counts are complete Gazebo flights at 4x. fca3df865a is the pinned build; 6d1773f4c1 is the
+# Counts are complete Gazebo flights at 4x unless a comment says otherwise. fca3df865a is the
+# pinned build; 6d1773f4c1 is the
 # one in PX4's Docker image. docs/px4-mappings.md section 5 has the numbers.
 tolerances:
   # "At the waypoint" means inside a short cylinder around it: within_m sideways,
@@ -471,20 +486,20 @@ tolerances:
   # no field for the height, so px4_setup points at height_within_m.
   at_waypoint:
     # Requirement, and PX4's acceptance radius (goto param 2). Margin: holds came within
-    # 0.010-0.266 m on fca3df865a (15 flights) and 0.013-0.279 m on 6d1773f4c1 (6); fly-through
-    # waypoints within 1.20 m (earlier flights, build not recorded).
+    # 0.007-0.266 m on fca3df865a (16 flights) and 0.013-0.279 m on 6d1773f4c1 (12); fly-through
+    # waypoints within 1.20 m (2 survey flights, fca3df865a native).
     within_m: 2
     # Requirement, and PX4's own NAV_MC_ALT_RAD default (px4_setup points here). Margin: held
-    # within 0.091 m on fca3df865a (15) and 0.048 m on 6d1773f4c1 (6).
+    # within 0.091 m on fca3df865a (16) and 0.056 m on 6d1773f4c1 (12).
     height_within_m: 0.8
     edge_counts_as_inside: true # a position exactly on a limit is inside
   # How close the end of the flight has to be to the goal state.
   at_goal:
-    # Requirement. Margin: ended 0.019-0.069 m from the goal on fca3df865a (15) and 0.018-0.085 m
-    # on 6d1773f4c1 (6), and within 0.09 m in 28 earlier flights (17 of them a v1.18 release
-    # candidate in Docker). SIH, not a baseline setup, lands up to 1.09 m off.
+    # Requirement. Margin: ended 0.019-0.069 m from the goal on fca3df865a (16) and 0.018-0.085 m
+    # on 6d1773f4c1 (12), and within 0.09 m in 28 earlier flights (11 native on fca3df865a at 4x,
+    # 17 in Docker on 6d1773f4c1 at 1x to 8x). SIH, not a baseline setup, lands up to 1.09 m off.
     within_m: 0.5
-    # Requirement ("at rest"). Margin: 0.00 m/s at the end of every complete flight (21, both builds).
+    # Requirement ("at rest"). Margin: 0.00 m/s at the end of every complete flight (28, both builds).
     speed_below_m_s: 0.1
   # How far inside the geofence the plan has to stay (the stays_in_geofence precondition). Only
   # the generator uses it. The verifier checks the flown path against the geofence itself.

@@ -209,6 +209,7 @@ def test_a_log_gap_and_the_simulator_setup_are_named():
     sim = CONFIG["sim"]
     assert isinstance(sim["speed_factor"], (int, float)) and sim["speed_factor"] > 0
     assert isinstance(sim["px4_build"], str) and sim["px4_build"]
+    assert sim["simulator"] and isinstance(sim["headless"], bool)
 
 
 def test_px4_gets_the_same_waypoint_zone_as_the_checks():

@@ -42,7 +42,7 @@ Times are in seconds, positions in metres from the base (x north, y east, z up) 
 
 **`run.json`**
 - **Which run:** `mission_id`, `run_id`, and `plan` (the `.plan` file's path, from the run folder).
-- **`run_status`:** `completed` or `inconclusive`. An inconclusive run has a `reason` for it (`null` when completed):
+- **`run_status`:** `completed` or `inconclusive`. An inconclusive run has a `reason` for it (`null`, or left out, when completed):
   - `can_arm` and `mission_starts`, the two `assumed` preconditions;
   - `no_connection`, `upload_failed`, `no_takeoff` and `timeout` from the flyer;
   - `sim_died`, `sim_setup`, `several_logs` and `no_log` from the harness.
@@ -52,7 +52,7 @@ Times are in seconds, positions in metres from the base (x north, y east, z up) 
 - **`record`** (optional): what the run was flown with, such as PX4 build, simulator, model, speed, parameters and seed.
 
 **`readings.json`**
-- **Copied from `run.json`:** `mission_id`, `run_id`, `run_status` and `reason`.
+- **Copied from `run.json`:** `mission_id`, `run_id`, `run_status`, and `reason` when the run has one.
 - **The readings:**
   - `position` and `velocity`: lists of `{t_s, x, y, z}`;
   - `landed`, `nav_state` and `disarm_reason`: lists of `{t_s, value}`, with `landed` a boolean and the others integers;
@@ -65,6 +65,12 @@ Times are in seconds, positions in metres from the base (x north, y east, z up) 
   - `cross_check`, for a recorded run: `{recording, compared, unmatched, over_limit, max_difference_m, publishers, verdict, reason}`.
 
   R01, made up by hand, has none of these keys.
+
+**`gz_pose.jsonl`** (the harness's Gazebo recording, named in `run.json`'s `recording`): one JSON object per line, as `platform_configs/px4.yaml` describes above its `readings`.
+- **Pose:** `{"k": "pose", "t": <sim seconds>, "p": [east, north, up]}` for the vehicle model.
+- **Publishers:** `{"k": "pubs", "pubs": [[address, type], ...]}` lists the pose topic's publishers.
+- **Recorder notes:** `{"k": "info", ...}`, including any `error`.
+- **Clock:** `t` × 10⁶ is the log's timestamp, with no offset.
 
 **`expected-verdict.json`** (and the verifier's `verdict.json`)
 - **Top level:** `mission_id`, `run_id`, and `verdict` (PASS, FAIL or INCONCLUSIVE).

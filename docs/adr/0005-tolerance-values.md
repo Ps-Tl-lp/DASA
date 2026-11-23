@@ -32,8 +32,11 @@ PX4's own test tolerances carry no written basis either.
 
 ## Consequences
 
-- **The current values stand** (2026-11-23).
+- **The current values stand, provisionally** (2026-11-23). They predate this method.
+  - No mission and build pair has 10 baseline runs yet.
+  - `log_gap_max_s` trips the investigate rule: one 0.136 s gap was seen, more than half of 0.2 s.
+  - The first 10-run baseline per setup is a follow-up. Until then each comment gives the runs it has.
   - Requirements: `at_waypoint` and `at_goal`.
-  - Noise allowances: `hold_short_by_s`, `log_gap_max_s`, `geofence_clearance_m`, `landed` and `cross_check_m`.
+  - Noise allowances: `hold_short_by_s`, `log_gap_max_s`, `geofence_clearance_m`, `landed`, `cross_check_m` and `cross_check_time_s`.
 - **A new setup needs its own baseline.** Runs on another simulator, speed or PX4 build aren't judged with these allowances until then. The evidence so far is from Gazebo at 4x, on fca3df865a and 6d1773f4c1.
 - **"Tolerance values" leaves "Not decided yet"** in `docs/testing.md`.

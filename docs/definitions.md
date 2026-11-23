@@ -27,6 +27,8 @@ What we mean by these words across the repo. If one doesn't match how you use it
 | Flyer | The part of the harness that uploads the plan to PX4, arms, starts the mission and waits for the disarm. |
 | Recording | The harness's record of Gazebo's pose of the vehicle, made outside PX4. Position, velocity and `landed` are read from it. |
 | Sample | One timed value of a reading. |
+| Requirement | A tolerance that says what the mission counts as done, such as how close counts as at the waypoint. Chosen, not measured; the measured error is shown beside it as the margin (ADR 0005). |
+| Noise allowance | A tolerance that absorbs how much correct flights of the unmodified PX4 vary, such as how much shorter than the hold a stretch may read. Set only from baseline runs (ADR 0005). |
 | Reading | A value read from the log or from the harness's Gazebo recording, over the whole flight. Each reading names its source in `platform_configs/px4.yaml`. The verifier works from readings and never opens either file. |
 | Vehicle type | A drone we can launch, with what it's fitted with (camera, grippers). Listed in `px4.yaml`. The generator flies the least-equipped one that can do the mission, and the start state copies its equipment. |
 | Mission settings | What kind of mission to generate: how many waypoints, which properties change, any narrower ranges. Platform-neutral, kept with the generator. Can narrow `px4.yaml`'s ranges, never widen them. |
