@@ -18,7 +18,12 @@
       "verdict": "FAIL",
       "expected_s": 5,
       "observed_s": 3.4,
-      "reason": "Only visit ended at 15.40 s after entering at 12.00 s"
+      "reason": "Only visit in mission mode ended at 15.40 s after entering at 12.00 s"
+    },
+    {
+      "check": "disarmed_after_landing",
+      "verdict": "PASS",
+      "reason": "Disarm reason changed to 6 at 26.00 s, 2.00 s after touchdown at 24.00 s"
     }
   ]
 }
