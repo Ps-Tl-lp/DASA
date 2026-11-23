@@ -32,7 +32,7 @@ To run part of the suite, give pytest a file (`pytest tests/test_missions.py`) o
 - Before fixing a bug, write a test that reproduces it and fails. The fix makes it pass.
 - A flaky test passes and fails on the same code. Quarantine it the day it appears: skip it with `@pytest.mark.skip(reason="flaky: <issue link>")`, open an Issue, and find the cause before deleting anything, because some flaky tests are reporting a real bug. Run a new test several times in a row before merging it.
 - Never edit or delete a test to make it pass. If a test itself is wrong, say so in the PR and explain the change.
-- Test behavior at the boundaries: one case just inside and one just outside each tolerance. For time limits, mind the 0.1 s resolution of ground truth (below).
+- Test behavior at the boundaries: one case just inside and one just outside each tolerance. For time limits, mind how far apart ground-truth readings are: about 0.07 s at 4× (below).
 
 ## Known behaviors tests must account for
 
@@ -52,7 +52,7 @@ Log contents:
 - Timestamps are uint64 microseconds since boot. Some samples come before the log start, so cast to signed before subtracting.
 - Latitude and longitude need about 7 decimals. Three decimals is about 100 m.
 - Local frames are NED: z points down, so altitude is -z.
-- Ground truth is logged at about 10 Hz, so times measured from it have about 0.1 s resolution. Other topics log at other rates (EKF position about 125 Hz, `vehicle_status` about 2 Hz, `mission_result` only on change), so line them up by time, not by row.
+- Ground truth is logged about every 0.07 s of sim time at 4×, so times measured from it have that resolution. The logger asks for every 20 ms ([`logged_topics.cpp`](https://github.com/PX4/PX4-Autopilot/blob/fca3df865af36124a28c9d607e850f111dbaaea9/src/modules/logger/logged_topics.cpp#L249)) and gets fewer readings at 4×. Other topics log at other rates (EKF position about 125 Hz, `vehicle_status` about 2 Hz, `mission_result` only on change), so line them up by time, not by row.
 
 ## Not decided yet
 
@@ -63,7 +63,7 @@ This list is the one place open decisions are tracked. Until one is decided, cod
 - What evidence can show a collision. The log can't; the simulator's contact record can.
 - The never-lands rule: when a log that ends airborne counts as FAIL rather than INCONCLUSIVE.
 - The RTL timing rule.
-- The dwell window across the RTL switch. `platform_configs/px4.yaml` proposes one rule: time at the waypoint runs from the first reading inside the zone to the first reading outside it. That includes the start of the return's climb (about 1.1 s in test flights, `docs/px4-mappings.md` section 5).
+- The dwell window across the RTL switch. `platform_configs/px4.yaml` proposes one rule: time at the waypoint runs from the first reading inside the zone to the first reading outside it. That adds 1.1 to 1.9 s to the hold PX4 flew: 1.1 to 1.3 s when the return climbs out through the top of the zone (`docs/px4-mappings.md` section 5), and 1.8 to 1.9 s when the waypoint is above `RTL_RETURN_ALT` and the return leaves sideways (ten local runs of mine).
 - What a gap in the log does to the hold check. `docs/px4-mappings.md` section 5 has a proposal.
 - When a log counts as a complete flight, and how the checks combine into one verdict for a run. A log cut off after landing reads as a normal end today (R5 wants INCONCLUSIVE).
 - Fixture format (trimmed `.ulg` or extracted traces) and how they're produced. Fixtures come with the "Validate the verifier" work.

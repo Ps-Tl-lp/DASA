@@ -148,7 +148,7 @@ PX4 parameters that change what an item does. `px4_setup` sets `RTL_TYPE`, `RTL_
 | [RTL_RETURN_ALT](https://docs.px4.io/main/en/advanced_config/parameter_reference.html#RTL_RETURN_ALT) | 30 m | The drone climbs to this height before flying back, unless it is already higher |
 | [RTL_DESCEND_ALT](https://docs.px4.io/main/en/advanced_config/parameter_reference.html#RTL_DESCEND_ALT) | 10 m | The height it drops to over home before landing |
 | [RTL_LAND_DELAY](https://docs.px4.io/main/en/advanced_config/parameter_reference.html#RTL_LAND_DELAY) | 0 s | The wait at that height before landing. −1 means hover and never land. |
-| [RTL_MIN_DIST](https://docs.px4.io/main/en/advanced_config/parameter_reference.html#RTL_MIN_DIST), [RTL_CONE_ANG](https://docs.px4.io/main/en/advanced_config/parameter_reference.html#RTL_CONE_ANG) | 10 m, 45° | Close to home, the return height can be lower than `RTL_RETURN_ALT` |
+| [RTL_MIN_DIST](https://docs.px4.io/main/en/advanced_config/parameter_reference.html#RTL_MIN_DIST), [RTL_CONE_ANG](https://docs.px4.io/main/en/advanced_config/parameter_reference.html#RTL_CONE_ANG) | 10 m, 45° | Close to home, the return height can be lower than `RTL_RETURN_ALT`. On the pinned build `NAV_ACC_RAD` decides it: within 10 m of home the return climbs to twice the distance. The cone is used only between `NAV_ACC_RAD` and `RTL_MIN_DIST`, and at these defaults that range is empty ([source](https://github.com/PX4/PX4-Autopilot/blob/fca3df865af36124a28c9d607e850f111dbaaea9/src/modules/navigator/rtl.cpp#L596-L628)). |
 
 Docs: [Return mode (multicopter)](https://docs.px4.io/main/en/flight_modes_mc/return.html), [Missions: acceptance radius](https://docs.px4.io/main/en/flying/missions.html).
 
