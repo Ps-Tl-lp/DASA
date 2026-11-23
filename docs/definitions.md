@@ -19,7 +19,7 @@ What we mean by these words across the repo. If one doesn't match how you use it
 | Geofence | An optional per-mission rule: a cylinder around the base the flight must stay inside. It comes from the mission's settings and fits inside the flight area. The same check runs twice: before the flight on where the plan will fly, with `tolerances.geofence_clearance_m` to spare (precondition), and after it on the flown path (postcondition). PX4 has its own geofence (`GF_MAX_` parameters); we keep that off. |
 | At the waypoint | A short cylinder around a waypoint. Its size is `tolerances.at_waypoint` in `platform_configs/px4.yaml`: `within_m` sideways, `height_within_m` up or down. A position exactly on a limit counts as inside. Used for the plan's acceptance radius, `visited`, `clicked_pic`, the hold check and the order check. |
 | Touchdown | The first landed reading after the last airborne one. `disarmed_after_landing` (in `platform_configs/px4.yaml`) checks that PX4 disarms at or after it. |
-| Reading | A value we read from the log, over the whole flight. The verifier works from readings and never opens the log. |
+| Reading | A value read from the log or from the harness's Gazebo recording, over the whole flight. Each reading names its source in `platform_configs/px4.yaml`. The verifier works from readings and never opens either file. |
 | Vehicle type | A drone we can launch, with what it's fitted with (camera, grippers). Listed in `px4.yaml`. The generator picks one, and the start state copies its equipment. |
 | Mission settings | What kind of mission to generate: how many waypoints, which properties change, any narrower ranges. Platform-neutral, kept with the generator. Can narrow `px4.yaml`'s ranges, never widen them. |
 | No-fly zone | An area the drone must stay out of. Dropped for the demo (Nov 21). A rule, not a solid obstacle. |
@@ -28,7 +28,7 @@ What we mean by these words across the repo. If one doesn't match how you use it
 | Mission plan | The QGroundControl `.plan` file the plan step produces from the mission. |
 | Plan step | The program that turns a mission into a mission plan. "Plan translator" on the board. |
 | Mapping | How to get a property's value from the available evidence. Some mappings use one log field, others use the flown path. |
-| Log reader | Turns the platform's log into timed readings. It doesn't need the mission and judges nothing. |
+| Log reader | Turns the platform's log and the harness's Gazebo recording into timed readings, and checks the log's ground truth against the recording. It doesn't need the mission and judges nothing. |
 | Verifier | Checks the goal and postconditions against the readings and the mission. Each requirement gets PASS, FAIL or INCONCLUSIVE. Use INCONCLUSIVE when the readings cannot decide it. |
 | Validate | Show that the verifier gives the right answer on runs whose answer we already know. This is a working meaning and still open. |
 

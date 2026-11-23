@@ -9,11 +9,14 @@
 #   tasks, plan_item_defaults, plan step            how a change in state becomes a .plan item
 #   plan_template, inputs
 #   base_lat_lon               plan step, harness   where the base is on the map
-#   readings                   log reader           what we read from the .ulg log
+#   readings, time_zero_topics log reader           what we read from the Gazebo recording and the .ulg log
+#   log_only_readings,         log reader           a run with no recording, and the log checked
+#   cross_check                                     against the recording
 #   not_in_log, derived,       verifier             how the readings are judged against the mission
 #   goal_check, postconditions
 #   helpers                    whoever builds one   every function this file names, and who calls it
 #   tolerances                 all of them          the shared numbers
+#   sim                        harness, log reader  where Gazebo's pose is recorded
 # docs/px4-mappings.md has the reasoning and the PX4 doc links. docs/definitions.md has the terms.
 # platform_configs/README.md says what belongs in this file, in the mission, and in code.
 #
@@ -220,23 +223,63 @@ inputs:
   $item_height: { from: item, value: param_7 } # the item's height: the last of its seven params. 0 for return_home, as in simple.plan
 
 # ---- Readings (log reader) ------------------------------------------------------
-# Everything we read from the log, each as timed values over the whole flight. This is all the
-# log reader does: it turns the log into these readings and doesn't need the mission. The
-# sections after this one work from the readings and never touch the log.
-#   subtract_first  subtract the first logged value, so positions are measured from the base
-#                   (where the drone sat before takeoff) instead of PX4's own origin
+# Everything we read about the flight, each as timed values over the whole flight. This is all
+# the log reader does: it turns the harness's Gazebo recording and the log into these readings
+# and doesn't need the mission. The sections after this one work from the readings and never
+# touch either file.
+# Every row names its source:
+#   gz_pose  the harness's recording of Gazebo's pose topic (sim.pose_topic), made outside PX4.
+#            field is north, east or up in Gazebo's world frame.
+#   log      PX4's .ulg: topic and field.
+# Position, velocity and landed come from the recording, so a PX4 that changes its log can't
+# change them. Velocity is the change in position from one reading to the next (rate_of).
+# landed is worked out from position: on the ground (no higher than on_ground_m above where the
+# drone started) and still (slower than still_below_m_s). The flight mode, the disarm reason and
+# the camera trigger are PX4's own reports.
+#   subtract_first  subtract the first value, so positions are measured from the base
+#                   (where the drone sat before takeoff) instead of the simulator's origin
 #   flip_sign       multiply by -1, because PX4's z points down and ours points up
+# Times are seconds from the earliest sample of time_zero_topics in the log. The readings cover
+# the log's own span, so a log cut short gives readings cut short.
 readings:
-  agent.x:          { topic: vehicle_local_position_groundtruth, field: x,  subtract_first: true }
-  agent.y:          { topic: vehicle_local_position_groundtruth, field: y,  subtract_first: true }
-  agent.z:          { topic: vehicle_local_position_groundtruth, field: z,  subtract_first: true, flip_sign: true }
-  agent.velocity.x: { topic: vehicle_local_position_groundtruth, field: vx }
-  agent.velocity.y: { topic: vehicle_local_position_groundtruth, field: vy }
-  agent.velocity.z: { topic: vehicle_local_position_groundtruth, field: vz, flip_sign: true }
-  agent.landed:     { topic: vehicle_land_detected, field: landed }
-  disarm_reason:    { topic: vehicle_status, field: latest_disarming_reason } # not part of the state
-  nav_state:        { topic: vehicle_status, field: nav_state } # not part of the state. PX4's flight mode, logged on every change
-  camera_triggered_at: { topic: camera_capture, field: timestamp } # not part of the state. One value each time PX4 triggers the camera. No trigger, no topic in the log
+  agent.x:          { source: gz_pose, field: north, subtract_first: true }
+  agent.y:          { source: gz_pose, field: east,  subtract_first: true }
+  agent.z:          { source: gz_pose, field: up,    subtract_first: true }
+  agent.velocity.x: { source: gz_pose, rate_of: agent.x }
+  agent.velocity.y: { source: gz_pose, rate_of: agent.y }
+  agent.velocity.z: { source: gz_pose, rate_of: agent.z }
+  agent.landed:     { source: gz_pose, on_ground_m: tolerances.landed.height_m, still_below_m_s: tolerances.landed.speed_m_s }
+  nav_state:        { source: log, topic: vehicle_status, field: nav_state } # not part of the state. PX4's flight mode, logged on every change
+  disarm_reason:    { source: log, topic: vehicle_status, field: latest_disarming_reason } # not part of the state
+  camera_triggered_at: { source: log, topic: camera_capture, field: timestamp } # not part of the state. One value each time PX4 triggers the camera. No trigger, no topic in the log
+time_zero_topics: [vehicle_local_position_groundtruth, vehicle_land_detected]
+
+# A run flown before the harness recorded Gazebo (the M01 fixture's R02, for one) is read from
+# the log alone, with these rows in place of the ones above, and its readings say so.
+log_only_readings:
+  agent.x:          { source: log, topic: vehicle_local_position_groundtruth, field: x,  subtract_first: true }
+  agent.y:          { source: log, topic: vehicle_local_position_groundtruth, field: y,  subtract_first: true }
+  agent.z:          { source: log, topic: vehicle_local_position_groundtruth, field: z,  subtract_first: true, flip_sign: true }
+  agent.velocity.x: { source: log, topic: vehicle_local_position_groundtruth, field: vx }
+  agent.velocity.y: { source: log, topic: vehicle_local_position_groundtruth, field: vy }
+  agent.velocity.z: { source: log, topic: vehicle_local_position_groundtruth, field: vz, flip_sign: true }
+  agent.landed:     { source: log, topic: vehicle_land_detected, field: landed }
+  nav_state:        { source: log, topic: vehicle_status, field: nav_state }
+  disarm_reason:    { source: log, topic: vehicle_status, field: latest_disarming_reason }
+  camera_triggered_at: { source: log, topic: camera_capture, field: timestamp }
+
+# The log's own ground truth, checked against the recording. PX4's gz_bridge reads the same
+# Gazebo topic, so in a correct run every log sample has a recorded sample at the same sim time
+# with the same position (a Gazebo spike on 2026-11-23: 1403 of 1403 samples, within 2.1 um).
+# Positions are compared in the world frame, before subtract_first.
+# A run whose log and recording disagree is INCONCLUSIVE, whatever the other checks say, and the
+# disagreement is reported as its own check (evidence_cross_check): a log that doesn't match the
+# simulator is invalid evidence, and a variant that edits its own log is a finding in itself.
+cross_check:
+  log: { topic: vehicle_local_position_groundtruth, north: x, east: y, down: z }
+  same_time_within_s: 0.0005 # both sit on Gazebo's 4 ms physics step
+  max_difference_m: tolerances.cross_check_m
+  rule: every log sample has a recorded sample at the same time, no more than max_difference_m away, and the pose topic has one publisher
 
 # ---- Checks (verifier) ----------------------------------------------------------
 # The verifier gets the readings and the mission, and does all the judging.
@@ -323,7 +366,8 @@ postconditions:
   #   FAIL          the disarm reason changes between takeoff and touchdown (a disarm in the air)
   #   INCONCLUSIVE  no change at or after touchdown (the log stops first), or the log shows no
   #                 takeoff and touchdown (the other checks report that flight)
-  # In 19 Gazebo flights the reason changed from 0 to 6 2.008-2.016 s after touchdown.
+  # In 21 Gazebo flights the reason changed from 0 to 6 2.96-3.12 s after touchdown (2.008-2.016 s
+  # after PX4's own land detector said landed, which is COM_DISARM_LAND).
   # mission.yaml: not listed (every mission gets it)
   disarmed_after_landing:
     every_mission: true
@@ -369,3 +413,19 @@ tolerances:
   # (16 on fca3df865a, 6 on 6d1773f4c1): time in the zone and in mission mode was the planned
   # hold -0.05 to +0.24 s. One dropped log sample at 4x is 0.14 s.
   hold_short_by_s: 0.25
+  # Landed, worked out from the recorded position (readings.agent.landed). 21 Gazebo flights at
+  # 4x (15 on fca3df865a, 6 on 6d1773f4c1): while PX4 said landed, the drone was within 0.0008 m
+  # of its start height and moved under 0.001 m/s. With these values touchdown comes 0.95-1.10 s
+  # before PX4's land detector says landed, and PX4 disarms 2.96-3.12 s after it.
+  landed:
+    height_m: 0.1
+    speed_m_s: 0.1
+  # How far the log's ground truth may be from the recording (cross_check). PX4 logs it as
+  # float32, which rounded it by up to 5.5 um in 8 flights on 6d1773f4c1.
+  cross_check_m: 0.0001
+
+# ---- Simulator (harness) --------------------------------------------------------
+# Where the harness records Gazebo's pose (readings, source gz_pose).
+sim:
+  world: default
+  pose_topic: /world/default/pose/info # the topic PX4's gz_bridge turns into the log's ground truth

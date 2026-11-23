@@ -145,6 +145,23 @@ def test_every_mission_flags_are_booleans():
     assert CONFIG["postconditions"]["disarmed_after_landing"]["every_mission"] is True
 
 
+def test_every_reading_names_its_source():
+    for section in ("readings", "log_only_readings"):
+        for name, row in CONFIG[section].items():
+            assert row["source"] in {"gz_pose", "log"}, (section, name)
+            if row["source"] == "log":
+                assert row["topic"] and row["field"], (section, name)
+            else:
+                ways = {"field", "rate_of", "on_ground_m"} & set(row)
+                assert len(ways) == 1, (section, name)
+    assert set(CONFIG["log_only_readings"]) == set(CONFIG["readings"])
+
+
+def test_the_log_is_checked_against_the_recording():
+    assert lookup(CONFIG["cross_check"]["max_difference_m"]) > 0
+    assert CONFIG["sim"]["pose_topic"].startswith(f"/world/{CONFIG['sim']['world']}/")
+
+
 def test_px4_gets_the_same_waypoint_zone_as_the_checks():
     # Sideways goes into each goto item, height into a PX4 setting.
     assert CONFIG["tasks"]["goto"]["plan_item"]["params"][1] == f"{ZONE}.within_m"

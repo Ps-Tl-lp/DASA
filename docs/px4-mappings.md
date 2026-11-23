@@ -10,6 +10,8 @@ Both logs were flown on PX4 build `fca3df865a`, the build the repo pins (ADR 000
 
 ## 1. State properties from the log
 
+**Since the config decisions of 2026-11-23,** position, velocity and `landed` come from the harness's recording of Gazebo's `/world/default/pose/info`, not from the log. That is the same data PX4 logs as `vehicle_local_position_groundtruth`: sample for sample, within 2.1 µm, in a local spike. The log's copy is checked against the recording (`cross_check` in `px4.yaml`), and a run whose log disagrees is INCONCLUSIVE. Velocity is the change in position between readings, and `landed` is worked out from position (on the ground and still). The tables below give the log's side, which a run with no recording still uses.
+
 For a goal requirement, compare the readings with the required value: PASS or FAIL when they decide it, INCONCLUSIVE when it is missing or invalid. The final sample stands for the goal in these two logs because each holds one complete flight. If a log ends early or carries on into something else, its last sample does not show the mission's final state.
 
 | Property | Log topic and field | Calculation | Why this field | Gazebo log | SIH log | Team check |
@@ -28,7 +30,7 @@ Docs: [VehicleLocalPosition](https://docs.px4.io/main/en/msg_docs/VehicleLocalPo
 - **Why subtract the first value.** The simulator's origin need not be our (0, 0, 0). In both logs the first value is within 0.02 m of zero, so the subtraction is a safeguard. It does mean the mapping assumes the drone starts at home. A log that starts after liftoff, or a vehicle that starts elsewhere, needs a separately known home reference. In a local spike of mine, 3 of 10 SIH flights at 10x speed logged from mid-air (first position 2.6 to 5.2 m up); none of 5 Gazebo flights did. The first `landed` sample is false in exactly those logs, which would make a cheap check. It is not in `px4.yaml`, because the demo flies Gazebo.
 - **A start-state check on position would always pass,** because the first position is (0, 0, 0) by construction. Checking the start state against the log needs a different source for position.
 - **Ground truth comes from the simulator.** A real vehicle lacks this simulator topic. PX4's estimated position is a different source of evidence.
-- **`landed` and the disarm check below are PX4's own reports.** Position is the simulator's. If a variant could be wrong about having landed, that matters. Worth a team decision. A simulator-side version is possible: on the ground and still, from ground truth. Both flights end at height 0.00 m and speed 0.00 m/s.
+- **`landed` is now the simulator's, the disarm check is still PX4's own report.** `landed` is worked out from the recorded position: within `tolerances.landed.height_m` (0.1 m) of the start height and slower than `tolerances.landed.speed_m_s` (0.1 m/s). In 21 Gazebo flights the drone was within 0.0008 m and 0.001 m/s while PX4 said landed. Touchdown that way comes 0.95 to 1.10 s before PX4's land detector says landed, and lift-off 2.70 to 2.82 s after PX4 says "not landed" (PX4 flips at arming, before the drone leaves the ground).
 - **A vehicle can be landed without ever flying.** In a never-armed log I had locally (`unkown_mission.ulg`, not a team file), `landed` stays true. If takeoff is required, check that the vehicle left the ground during this run.
 - **Time** is the message `timestamp` divided by 1,000,000: seconds since PX4 started.
 

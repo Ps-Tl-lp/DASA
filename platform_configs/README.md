@@ -12,7 +12,9 @@ Values marked `PROPOSED` in the file are not decided yet. They are tracked in [d
 | `preconditions` | Generator | Rules a generated mission has to pass |
 | `tasks`, `plan_item_defaults`, `plan_template`, `inputs` | Plan step | Which tasks a mission needs, how to write each into the `.plan` file, and where each `$` value comes from |
 | `base_lat_lon` | Plan step, harness | Where the base is on the map |
-| `readings` | Log reader | What we read from the log |
+| `readings`, `time_zero_topics` | Log reader | What we read from the harness's Gazebo recording and from the log, each row naming its source |
+| `log_only_readings`, `cross_check` | Log reader | A run with no recording, and the log's ground truth checked against the recording |
+| `sim` | Harness, log reader | Where Gazebo's pose is recorded |
 | `not_in_log`, `derived`, `goal_check`, `postconditions` | Verifier | How the readings are judged against the goal state and the postconditions |
 | `helpers` | Whoever builds one | Every function the config names, who calls it and what it answers |
 | `tolerances` | All of them | The shared numbers |
@@ -38,8 +40,8 @@ The top of `px4.yaml` lists how values are written. `tests/test_px4_config.py` c
 1. The generator reads a mission settings file (simple, medium or survey) and the ranges in `px4.yaml`. It picks a vehicle type and draws a start state and a goal state inside the flight area, and inside the mission's geofence if it has one. The settings also give the mission's postconditions, such as the hold at each waypoint. The generator writes them out next to the two states.
 2. It checks the drawn mission (waypoint spacing, the geofence) and asks the plan step to build its plan. If anything fails, it draws again. The plan built for this check is the plan that gets flown.
 3. The plan step compares the two states, picks the tasks that make the changes (`sets`) plus whatever has to happen first (`needs`), and writes the `.plan` file. The two states can't show a hold or an order, so it reads both from the mission's postconditions. `inputs` says where each value it fills in comes from.
-4. The harness sets PX4 up (`px4_setup`), launches the vehicle type's `sim_model` in Gazebo, flies the plan and saves the `.ulg` log.
-5. The log reader turns the log into `readings`, each sample with its time. That is all it does. It doesn't need the mission.
+4. The harness sets PX4 up (`px4_setup`), launches the vehicle type's `sim_model` in Gazebo, records Gazebo's pose of the vehicle (`sim.pose_topic`), flies the plan and saves the `.ulg` log.
+5. The log reader turns the recording and the log into `readings`, each sample with its time, and checks the log's ground truth against the recording (`cross_check`). That is all it does. It doesn't need the mission.
 6. The verifier does all the judging. It works out `visited` and `clicked_pic` from the readings and the mission's waypoints, compares the end of the flight with the goal state, and checks each of the mission's postconditions, using the mission's values and not the plan's: PASS, FAIL or INCONCLUSIVE.
 
 ## Related

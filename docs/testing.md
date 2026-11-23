@@ -64,6 +64,7 @@ This list is the one place open decisions are tracked. Until one is decided, cod
 - The never-lands rule: when a log that ends airborne counts as FAIL rather than INCONCLUSIVE.
 - The RTL timing rule.
 - What a gap in the log does to the hold check. `docs/px4-mappings.md` section 5 has a proposal.
+- How to judge the evidence PX4 reports about itself (flight mode, disarm reason, camera trigger) when the autopilot is modified. Position, velocity and `landed` come from the harness's Gazebo recording and no longer depend on PX4, but in PX4's Docker image PX4 still starts Gazebo and runs beside the recorder (a follow-up: Gazebo in its own container).
 - How the checks combine into one verdict for a run. (When a log counts as a complete flight is decided: `disarmed_after_landing` in `platform_configs/px4.yaml`.)
 - Fixture format (trimmed `.ulg` or extracted traces) and how they're produced. Fixtures come with the "Validate the verifier" work.
 - The verifier's language and libraries, command line and report format ("Implement verifier" card).
