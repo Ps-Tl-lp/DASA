@@ -235,6 +235,7 @@ readings:
   agent.velocity.z: { topic: vehicle_local_position_groundtruth, field: vz, flip_sign: true }
   agent.landed:     { topic: vehicle_land_detected, field: landed }
   disarm_reason:    { topic: vehicle_status, field: latest_disarming_reason } # not part of the state
+  nav_state:        { topic: vehicle_status, field: nav_state } # not part of the state. PX4's flight mode, logged on every change
   camera_triggered_at: { topic: camera_capture, field: timestamp } # not part of the state. One value each time PX4 triggers the camera. No trigger, no topic in the log
 
 # ---- Checks (verifier) ----------------------------------------------------------
@@ -290,17 +291,22 @@ postconditions:
     reads: [agent.x, agent.y, agent.z]
     helper: inside_geofence
     rule: every reading inside the mission's geofence cylinder
-  # One per waypoint the mission wants a hold at.
-  # PASS if one stretch is long enough. FAIL if none is.
+  # One per waypoint the mission wants a hold at. Time counts only while PX4 is flying the
+  # mission, so the time it takes to leave the zone after switching to the return doesn't.
+  # A stretch starts at the first reading inside the zone while PX4 is in mission mode, and
+  # ends at the first later reading that is outside the zone or not in mission mode. PX4's
+  # mode at a reading is the last nav_state at or before it.
+  # PASS if one stretch lasts at least the mission's hold minus short_by_at_most. FAIL if none does.
   # INCONCLUSIVE if the log stops while the drone is still there and the hold isn't complete.
   # What a gap in the log does to this is not part of the rule yet (docs/px4-mappings.md
   # section 5 has a proposal).
   # mission.yaml: - hold_at: {waypoint: W1, min_s: 5}
   hold_at:
-    reads: [agent.x, agent.y, agent.z]
+    reads: [agent.x, agent.y, agent.z, nav_state]
     helper: at_waypoint
-    # PROPOSED
-    rule: the longest stretch from the first reading inside the zone to the first reading outside it is at least the mission's hold
+    in_nav_state: 3 # NAVIGATION_STATE_AUTO_MISSION (msg/versioned/VehicleStatus.msg)
+    short_by_at_most: tolerances.hold_short_by_s
+    rule: the longest stretch of readings inside the zone while PX4 is in mission mode lasts at least the mission's hold minus short_by_at_most
   # The mission lists its waypoints in the order it wants. Find the first time the drone is at
   # the first one, then the first time after that at the second, and so on. PASS if every
   # waypoint gets a time. FAIL if one doesn't.
@@ -349,3 +355,7 @@ tolerances:
   # How far inside the geofence the plan has to stay (the stays_in_geofence precondition). Only
   # the generator uses it. The verifier checks the flown path against the geofence itself.
   geofence_clearance_m: 2 # PROPOSED. The two logs peaked 0.05 m and 1.08 m above RTL_RETURN_ALT, and one drifted 0.98 m past W1.
+  # How much shorter than the mission's hold a stretch may be (hold_at). 22 Gazebo flights at 4x
+  # (16 on fca3df865a, 6 on 6d1773f4c1): time in the zone and in mission mode was the planned
+  # hold -0.05 to +0.24 s. One dropped log sample at 4x is 0.14 s.
+  hold_short_by_s: 0.25

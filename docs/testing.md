@@ -63,7 +63,6 @@ This list is the one place open decisions are tracked. Until one is decided, cod
 - What evidence can show a collision. The log can't; the simulator's contact record can.
 - The never-lands rule: when a log that ends airborne counts as FAIL rather than INCONCLUSIVE.
 - The RTL timing rule.
-- The dwell window across the RTL switch. `platform_configs/px4.yaml` proposes one rule: time at the waypoint runs from the first reading inside the zone to the first reading outside it. That adds 1.1 to 1.9 s to the hold PX4 flew: 1.1 to 1.3 s when the return climbs out through the top of the zone (`docs/px4-mappings.md` section 5), and 1.8 to 1.9 s when the waypoint is above `RTL_RETURN_ALT` and the return leaves sideways (ten local runs of mine).
 - What a gap in the log does to the hold check. `docs/px4-mappings.md` section 5 has a proposal.
 - When a log counts as a complete flight, and how the checks combine into one verdict for a run. A log cut off after landing reads as a normal end today (R5 wants INCONCLUSIVE).
 - Fixture format (trimmed `.ulg` or extracted traces) and how they're produced. Fixtures come with the "Validate the verifier" work.

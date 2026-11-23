@@ -132,6 +132,13 @@ def test_every_check_has_a_rule_and_reads_real_readings():
             assert reading in CONFIG["readings"], f"{name} reads {reading}"
 
 
+def test_hold_counts_in_mission_mode_with_a_named_allowance():
+    hold = CONFIG["postconditions"]["hold_at"]
+    assert "nav_state" in hold["reads"]
+    assert hold["short_by_at_most"] == "tolerances.hold_short_by_s"
+    assert 0 < lookup(hold["short_by_at_most"]) < 1
+
+
 def test_px4_gets_the_same_waypoint_zone_as_the_checks():
     # Sideways goes into each goto item, height into a PX4 setting.
     assert CONFIG["tasks"]["goto"]["plan_item"]["params"][1] == f"{ZONE}.within_m"
