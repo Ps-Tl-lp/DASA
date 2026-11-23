@@ -36,7 +36,6 @@ Times are in seconds, positions in metres from the base (x north, y east, z up) 
 - **`mission_id`:** a string.
 - **`start`, `goal`:** the file names of the two states, beside it.
 - **`postconditions`:** a list with one item per postcondition, in the form `platform_configs/px4.yaml` gives next to each check, for example `- hold_at: {waypoint: W1, min_s: 5}`. `disarmed_after_landing` isn't listed, because every mission gets it.
-- **`preconditions`** (optional): the mission-specific ones, in the same form, for example `- stays_in_geofence: {max_distance_m: 60, max_height_m: 35}`. The global ones in `platform_configs/px4.yaml` apply to every mission and aren't listed.
 - **Generated missions** also carry the settings and seed they came from.
 
 **`start.xml`, `goal.xml`:** every property of the base, the agent and each waypoint, with its type and unit. A waypoint that doesn't list `clicked_pic` counts as false.
@@ -76,7 +75,6 @@ Times are in seconds, positions in metres from the base (x north, y east, z up) 
 
 **`expected-verdict.json`** (and the verifier's `verdict.json`)
 - **Top level:** `mission_id`, `run_id`, and `verdict` (PASS, FAIL or INCONCLUSIVE).
-- **`preconditions`:** one entry per precondition the generator checked before the flight, global or mission-specific, each with `check`, `verdict` (PASS or FAIL) and a `reason`. A mission is only flown if all of them PASS. A fixture made by hand may leave this out.
 - **`checks`:** one per check, in this order:
   1. `visited` for each goal waypoint, and `clicked_pic` for each that lists it;
   2. `goal_check`;
