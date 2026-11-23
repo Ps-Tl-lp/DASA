@@ -1,0 +1,8 @@
+{
+  "mission_id": "M01",
+  "run_id": "R02",
+  "plan": "../mission.plan",
+  "run_status": "completed",
+  "source": "simulator",
+  "log": "R02.ulg"
+}

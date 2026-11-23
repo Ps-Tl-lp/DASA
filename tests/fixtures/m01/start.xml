@@ -1,0 +1,27 @@
+<env id="S1" type="px4">
+  <base id="B1">
+    <x type="float" unit="m" value="0"/>
+    <y type="float" unit="m" value="0"/>
+    <z type="float" unit="m" value="0"/>
+  </base>
+  <agent id="A1" base="B1">
+    <x type="float" unit="m" value="0"/>
+    <y type="float" unit="m" value="0"/>
+    <z type="float" unit="m" value="0"/>
+    <velocity>
+      <x type="float" unit="m/s" value="0"/>
+      <y type="float" unit="m/s" value="0"/>
+      <z type="float" unit="m/s" value="0"/>
+    </velocity>
+    <landed type="bool" value="true"/>
+    <vehicle_type type="string" value="multicopter"/>
+    <has_camera type="bool" value="false"/>
+    <has_grippers type="bool" value="false"/>
+  </agent>
+  <waypoint id="W1">
+    <x type="float" unit="m" value="50"/>
+    <y type="float" unit="m" value="0"/>
+    <z type="float" unit="m" value="20"/>
+    <visited type="bool" value="false"/>
+  </waypoint>
+</env>

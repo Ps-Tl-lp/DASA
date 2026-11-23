@@ -1,0 +1,6 @@
+waypoints: 1
+goal:
+  waypoint.visited: true
+  agent_ends: base_landed
+postconditions:
+  hold_at_each_waypoint: {min_s: 5}  # becomes one hold_at per waypoint in mission.yaml

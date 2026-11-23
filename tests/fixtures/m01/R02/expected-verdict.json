@@ -1,0 +1,24 @@
+{
+  "mission_id": "M01",
+  "run_id": "R02",
+  "verdict": "PASS",
+  "checks": [
+    {
+      "check": "visited",
+      "waypoint": "W1",
+      "verdict": "PASS"
+    },
+    {
+      "check": "landed_at_base",
+      "verdict": "PASS"
+    },
+    {
+      "check": "hold_at",
+      "waypoint": "W1",
+      "verdict": "PASS",
+      "expected_s": 5,
+      "observed_s": 6.11,
+      "reason": "Longest visit ended at 43.296 s after entering at 37.184 s"
+    }
+  ]
+}

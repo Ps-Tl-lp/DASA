@@ -48,4 +48,5 @@ The top of `px4.yaml` lists how values are written. `tests/test_px4_config.py` c
 
 - [docs/px4-mappings.md](../docs/px4-mappings.md): where each row comes from (PX4 docs, the calculation, what test flights showed)
 - [docs/definitions.md](../docs/definitions.md): what each term means
+- [tests/fixtures/m01/](../tests/fixtures/m01/): one mission with two runs and their expected verdicts
 - [docs/adr/0004-platform-config.md](../docs/adr/0004-platform-config.md): why this lives in one file per platform

@@ -1,0 +1,5 @@
+mission_id: M01
+start: start.xml
+goal: goal.xml
+postconditions:
+  - hold_at: {waypoint: W1, min_s: 5}

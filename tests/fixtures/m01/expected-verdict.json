@@ -1,0 +1,24 @@
+{
+  "mission_id": "M01",
+  "run_id": "R01",
+  "verdict": "FAIL",
+  "checks": [
+    {
+      "check": "visited",
+      "waypoint": "W1",
+      "verdict": "PASS"
+    },
+    {
+      "check": "landed_at_base",
+      "verdict": "PASS"
+    },
+    {
+      "check": "hold_at",
+      "waypoint": "W1",
+      "verdict": "FAIL",
+      "expected_s": 5,
+      "observed_s": 3.4,
+      "reason": "Only visit ended at 15.40 s after entering at 12.00 s"
+    }
+  ]
+}
