@@ -15,15 +15,15 @@ What we mean by these words across the repo. If one doesn't match how you use it
 | Precondition | A rule a mission must pass to be accomplishable. The generator only outputs missions that pass. Some are a single limit, like maximum height. Others need several values together, like waypoint spacing. They live in the platform config, not in the mission. |
 | Accomplishable | The platform could complete the mission. A mission that breaks a precondition is never flown. Passing our checks only rules out the problems they cover. |
 | Postcondition | A condition for success that the goal state can't show, because it's about the whole flight. Example: the drone never left the geofence. It must be checkable from what a run records, which so far means the log. |
-| Flight area | How big the world is: a cylinder around the base. Generated points can't be outside it. |
+| Flight area | How far out the generator is allowed to place a mission: a cylinder around the base. Generated points can't be outside it. Our own limit; PX4 and Gazebo don't set one. |
 | Geofence | An optional per-mission rule: a cylinder around the base the flight must stay inside. It comes from the mission's settings and fits inside the flight area. The same check runs twice: before the flight on where the plan will fly, with 2 m to spare (precondition), and after it on the flown path (postcondition). PX4 has its own geofence (`GF_MAX_` parameters); we keep that off. |
 | At the waypoint | A short cylinder around a waypoint: 2 m sideways, 0.8 m up or down. A position exactly on a limit counts as inside. Used for the plan's acceptance radius, `visited`, `clicked_pic`, the hold check and the order check. |
-| Reading | A value we read from the log, over the whole flight. The goal check and the postconditions only use readings. |
+| Reading | A value we read from the log, over the whole flight. The verifier works from readings and never opens the log. |
 | Vehicle type | A drone we can launch, with what it's fitted with (camera, grippers). Listed in `px4.yaml`. The generator picks one, and the start state copies its equipment. |
 | Mission settings | What kind of mission to generate: how many waypoints, which properties change, any narrower ranges. Platform-neutral, kept with the generator. Can narrow `px4.yaml`'s ranges, never widen them. |
 | No-fly zone | An area the drone must stay out of. Dropped for the demo (Nov 21). A rule, not a solid obstacle. |
 | Task | What we ask the drone to do, such as go to waypoint A. Tasks go in the plan. |
-| Action | How the drone does a task: fly, turn, climb. That's PX4's job and we don't model it. Takeoff, go to waypoint and return home are tasks, not actions. |
+| Action | How the drone does a task: fly, turn, climb. That's PX4's job. We only say what each task changes, not the path PX4 takes to do it. Takeoff, go to waypoint and return home are tasks, not actions. |
 | Mission plan | The QGroundControl `.plan` file the plan step produces from the mission. |
 | Plan step | The program that turns a mission into a mission plan. "Plan translator" on the board. |
 | Mapping | How to get a property's value from the available evidence. Some mappings use one log field, others use the flown path. |

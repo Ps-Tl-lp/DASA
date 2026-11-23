@@ -1,8 +1,8 @@
 """Check that platform_configs/px4.yaml hangs together.
 
 These tests don't judge whether the values are right. They catch a config that
-no longer loads, points at a key that isn't there, or stops matching the simple
-mission plan we already fly.
+no longer loads, breaks its own rules for how values are written (the list at
+the top of the file), or stops matching the simple mission plan we already fly.
 """
 
 import json
@@ -12,8 +12,10 @@ from pathlib import Path
 import yaml
 
 ROOT = Path(__file__).resolve().parent.parent
-CONFIG_TEXT = (ROOT / "platform_configs" / "px4.yaml").read_text()
-CONFIG = yaml.safe_load(CONFIG_TEXT)
+CONFIG = yaml.safe_load((ROOT / "platform_configs" / "px4.yaml").read_text())
+PLAN = json.loads((ROOT / CONFIG["plan_template"]).read_text())["mission"]
+PLAN_ITEMS = PLAN["items"]
+ZONE = "tolerances.at_waypoint"
 
 
 def lookup(dotted_name):
@@ -24,6 +26,42 @@ def lookup(dotted_name):
     return value
 
 
+def every_value(node=CONFIG):
+    """Every value in the config, however deeply it is nested. Keys are left out."""
+    if isinstance(node, dict):
+        for child in node.values():
+            yield from every_value(child)
+    elif isinstance(node, list):
+        for child in node:
+            yield from every_value(child)
+    else:
+        yield node
+
+
+def every_value_under(key, node=CONFIG):
+    """Every value stored under `key`, anywhere in the config."""
+    if isinstance(node, dict):
+        if key in node:
+            yield node[key]
+        for child in node.values():
+            yield from every_value_under(key, child)
+    elif isinstance(node, list):
+        for child in node:
+            yield from every_value_under(key, child)
+
+
+def every_check():
+    """Each check in the config, as (name, check)."""
+    preconditions = CONFIG["preconditions"]
+    for section in (
+        preconditions["mission"],
+        preconditions["tasks"],
+        CONFIG["derived"],
+        CONFIG["postconditions"],
+    ):
+        yield from section.items()
+
+
 def test_config_has_the_sections_each_step_reads():
     sections = {
         "vehicle_types",
@@ -31,35 +69,74 @@ def test_config_has_the_sections_each_step_reads():
         "preconditions",
         "tasks",
         "plan_item_defaults",
+        "plan_template",
         "base_lat_lon",
+        "inputs",
         "readings",
         "not_in_log",
         "derived",
         "goal_check",
         "postconditions",
+        "helpers",
         "tolerances",
     }
     assert sections <= set(CONFIG)
 
 
-def test_every_named_tolerance_and_px4_setting_exists():
-    # Anywhere the file says tolerances.x.y or px4_setup.X, that key has to exist.
-    names = re.findall(r"\b(?:tolerances|px4_setup)\.[\w.]+", CONFIG_TEXT)
+def test_every_dotted_name_points_somewhere():
+    # tolerances.x.y has to exist in this file. agent.x, waypoint.z and base.x
+    # are state properties, so they only need the right first word.
+    dotted_name = re.compile(r"[A-Za-z_]\w*(\.\w+)+")
+    names = [
+        v for v in every_value() if isinstance(v, str) and dotted_name.fullmatch(v)
+    ]
     assert names
     for name in names:
-        lookup(name.rstrip("."))  # a missing key raises KeyError
+        first_word = name.split(".")[0]
+        if first_word in CONFIG:
+            lookup(name)  # a missing key raises KeyError
+        else:
+            assert first_word in {"agent", "waypoint", "base"}, name
 
 
-def test_checks_only_read_readings_that_exist():
-    checks = {**CONFIG["derived"], **CONFIG["postconditions"]}
-    for check_name, check in checks.items():
+def test_allowed_vehicle_types_are_the_ones_defined():
+    allowed = CONFIG["preconditions"]["global"]["allowed_values"]
+    assert set(allowed["agent.vehicle_type"]) == set(CONFIG["vehicle_types"])
+
+
+def test_every_dollar_value_has_one_row_in_inputs():
+    used = {v for v in every_value() if isinstance(v, str) and v.startswith("$")}
+    assert used == set(CONFIG["inputs"])
+    # `from` is one of the kinds listed above `inputs` in the config.
+    kinds = {"postcondition", "first_goto", "waypoint", "item"}
+    for name, row in CONFIG["inputs"].items():
+        assert row["from"] in kinds, name
+
+
+def test_every_helper_is_listed_in_helpers():
+    assert set(every_value_under("helper")) == set(CONFIG["helpers"])
+
+
+def test_every_check_has_a_rule_and_reads_real_readings():
+    for name, check in every_check():
+        assert isinstance(check["rule"], str) and check["rule"], name
+    # Checks on the flight say which readings they use. The ones before it have none.
+    after_the_flight = [
+        *CONFIG["derived"].items(),
+        *CONFIG["postconditions"].items(),
+        *(("goal_check", comparison) for comparison in CONFIG["goal_check"]["within"]),
+    ]
+    for name, check in after_the_flight:
+        assert check["reads"], name
         for reading in check["reads"]:
-            assert reading in CONFIG["readings"], f"{check_name} reads {reading}"
+            assert reading in CONFIG["readings"], f"{name} reads {reading}"
 
 
-def test_height_zone_matches_the_px4_setting():
-    zone_height = CONFIG["tolerances"]["at_waypoint"]["height_within_m"]
-    assert CONFIG["px4_setup"]["NAV_MC_ALT_RAD"] == zone_height
+def test_px4_gets_the_same_waypoint_zone_as_the_checks():
+    # Sideways goes into each goto item, height into a PX4 setting.
+    assert CONFIG["tasks"]["goto"]["plan_item"]["params"][1] == f"{ZONE}.within_m"
+    assert CONFIG["px4_setup"]["NAV_MC_ALT_RAD"] == f"{ZONE}.height_within_m"
+    assert set(every_value_under("zone")) == {ZONE}
 
 
 def test_flight_area_has_room_for_a_geofence():
@@ -75,12 +152,27 @@ def test_flight_area_has_room_for_a_geofence():
 def test_tasks_use_the_simple_plans_commands_and_frames():
     # Param values aren't compared: goto's radius differs on purpose
     # (0 in the plan, 2 here).
-    plan = json.loads((ROOT / "missions" / "simple.plan").read_text())
-    home_lat, home_lon, _ = plan["mission"]["plannedHomePosition"]
-    assert CONFIG["base_lat_lon"] == {"lat": home_lat, "lon": home_lon}
     tasks = ["takeoff", "goto", "return_home"]
-    for item, task in zip(plan["mission"]["items"], tasks, strict=True):
+    for item, task in zip(PLAN_ITEMS, tasks, strict=True):
         plan_item = CONFIG["tasks"][task]["plan_item"]
         assert item["command"] == plan_item["command"], task
         assert item["frame"] == plan_item["frame"], task
         assert len(item["params"]) == len(plan_item["params"]), task
+
+
+def test_base_is_where_the_simple_plan_starts():
+    home_lat, home_lon, _ = PLAN["plannedHomePosition"]
+    assert CONFIG["base_lat_lon"] == {"lat": home_lat, "lon": home_lon}
+
+
+def test_plan_item_defaults_match_the_simple_plan():
+    defaults = CONFIG["plan_item_defaults"]
+    for position, item in enumerate(PLAN_ITEMS, start=1):
+        # A task's plan_item plus the defaults is everything an item has.
+        assert set(item) == {"command", "frame", "params"} | set(defaults)
+        for key, value in defaults.items():
+            if not str(value).startswith("$"):
+                assert item[key] == value, key
+        # What the plan we copy does for the two $ values.
+        assert item["doJumpId"] == position
+        assert item["Altitude"] == item["params"][6]

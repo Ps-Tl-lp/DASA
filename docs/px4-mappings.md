@@ -1,6 +1,6 @@
 # PX4 mappings: the detail behind `platform_configs/px4.yaml`
 
-Nov 20, 2026, updated Nov 22. The blank "Team check" cells are for our row-by-row review.
+Nov 20, 2026, updated Nov 23. The blank "Team check" cells are for our row-by-row review.
 
 **First time through:** read the tables. The bullets under them and all of section 5 are backup (caveats and exact numbers from the two logs). Come back to them when a row raises a question.
 
@@ -30,13 +30,13 @@ Docs: [VehicleLocalPosition](https://docs.px4.io/main/en/msg_docs/VehicleLocalPo
 - **Ground truth comes from the simulator.** A real vehicle lacks this simulator topic. PX4's estimated position is a different source of evidence.
 - **`landed` and the disarm check below are PX4's own reports.** Position is the simulator's. If a variant could be wrong about having landed, that matters. Worth a team decision. A simulator-side version is possible: on the ground and still, from ground truth. Both flights end at height 0.00 m and speed 0.00 m/s.
 - **A vehicle can be landed without ever flying.** In a never-armed log I had locally (`unkown_mission.ulg`, not a team file), `landed` stays true. If takeoff is required, check that the vehicle left the ground during this run.
-- **Time** in the helpers is the message `timestamp` divided by 1,000,000: seconds since PX4 started.
+- **Time** is the message `timestamp` divided by 1,000,000: seconds since PX4 started.
 
-### Declarations and candidate mappings
+### Declarations and proposed mappings
 
-| Property | Candidate | On the two logs | Doc |
+| Property | Proposed mapping | On the two logs | Doc |
 |---|---|---|---|
-| `agent.has_camera`, `agent.has_grippers` | Declared in the start state, not read from the log. | Nothing shows what is fitted. `PD_GRIPPER_TYPE` reads 0 ("Binary Grab/Release") with no gripper on the vehicle, so it cannot confirm one. | [Gripper](https://docs.px4.io/main/en/peripherals/gripper.html) |
+| `agent.has_camera`, `agent.has_grippers` | Not read from the log. The start state gives the vehicle type, and the vehicle type sets them. | Nothing shows what is fitted. `PD_GRIPPER_TYPE` reads 0 ("Binary Grab/Release") with no gripper on the vehicle, so it cannot confirm one. | [Gripper](https://docs.px4.io/main/en/peripherals/gripper.html) |
 | `waypoint.clicked_pic` | A `camera_capture` entry whose time falls while the agent is at the waypoint. Look the agent's position up at that time (the nearest position sample). | No capture topic in either simple log (`TRIG_MODE` 0, no camera item). One capture in each spike flight with `TRIG_MODE` 1. | [CameraCapture](https://docs.px4.io/main/en/msg_docs/CameraCapture.html) |
 
 A gripper command can occur without a gripper. Both logs also have a camera trigger-control command (2003) at mission end on vehicles without a camera. The docs say `camera_capture.result` is -1 when the camera gives no feedback. The spike logs show 1 with no camera fitted, so the log proves PX4 triggered the camera, not that an image exists. With `TRIG_MODE` at 1, no capture means the picture was not triggered. With `TRIG_MODE` at 0 the trigger is off: a 203 flown that way logged the command and no capture. On a camera vehicle type, a log whose `TRIG_MODE` is not 1 means the trigger was off and the outcome is unknown. A type with no camera flies with the trigger off, so `clicked_pic` stays false there. [PX4 camera feedback source](https://github.com/PX4/PX4-Autopilot/blob/fca3df865af36124a28c9d607e850f111dbaaea9/src/modules/camera_feedback/CameraFeedback.cpp#L92-L154)
@@ -52,10 +52,10 @@ These are not state properties. They are what the verifier reads to check a post
 | Disarms after landing | `vehicle_status.latest_disarming_reason` | last value equals 6 (PX4 disarmed itself after landing) | 6 | 6 | |
 | Stays inside the geofence | none: worked out from the path | any reading further from the base than the mission's geofence distance, or higher than its height, fails | this mission has no geofence | this mission has no geofence | |
 | Visits in order | none: worked out from the path | walk the waypoints in the required order; each needs a time at it after the time matched for the one before | one waypoint, nothing to order | one waypoint, nothing to order | |
-| Holds at each waypoint | none: worked out from the path | longest unbroken time at the waypoint: within `at_waypoint.within_m` sideways and 0.8 m in height. A stretch with a log gap longer than 0.2 s in it doesn't count | see section 5 | see section 5 | |
-| No collision or crash (candidate) | four sources, see below | four warning signs, not enough to clear a flight | no signs | no signs | |
-| Time limit (candidate) | `vehicle_status.arming_state` | time from arming to disarming | 78.0 s | 85.6 s | |
-| Battery limit (candidate) | `battery_status.remaining` | lowest value while armed (0 to 1) | 0.50 | 0.50 | |
+| Holds at each waypoint | none: worked out from the path | longest stretch at the waypoint (`tolerances.at_waypoint`), from the first reading inside the zone to the first reading outside it. What a log gap does is a proposal in section 5 | see section 5 | see section 5 | |
+| No collision or crash (proposed) | four sources, see below | four warning signs, not enough to clear a flight | no signs | no signs | |
+| Time limit (proposed) | `vehicle_status.arming_state` | time from arming to disarming | 78.0 s | 85.6 s | |
+| Battery limit (proposed) | `battery_status.remaining` | lowest value while armed (0 to 1) | 0.50 | 0.50 | |
 
 Docs: [VehicleStatus](https://docs.px4.io/main/en/msg_docs/VehicleStatus.html), [BatteryStatus](https://docs.px4.io/main/en/msg_docs/BatteryStatus.html).
 
@@ -78,7 +78,7 @@ The flight area, each mission's geofence, the waypoint height and the "at the wa
 
 - **`RTL_RETURN_ALT` is 30 m here, 60 m in the docs.** PX4's multicopter defaults set 30 on the pinned build ([source](https://github.com/PX4/PX4-Autopilot/blob/fca3df865af36124a28c9d607e850f111dbaaea9/ROMFS/px4fmu_common/init.d/rc.mc_defaults)). The docs list 60 m as the general default ([Return mode](https://docs.px4.io/main/en/flight_modes_mc/return.html)). The generator needs the value the flight will actually use, so `px4_setup` sets it to 30 and the `stays_in_geofence` precondition reads it from there.
 - **Flight area: 200 m out, 50 m up (proposed).** Our `survey.plan` reaches 170 m from the base and flies at 30 m. A geofence has to be at least 32 m tall (the 30 m return climb plus the 2 m clearance), and a waypoint at 30 m needs the same, so 50 m leaves room.
-- **Why PX4's geofence stays off.** With it on, PX4 takes over when the drone crosses it (hold or return, depending on `GF_ACTION`). That can hide a variant that drifts, which is what we are testing for. With it off, the drift shows in the log and the `stays_in_geofence` postcondition fails the run. The flight area is how big the world is; each mission's geofence sits inside it and comes from the mission's settings. See [Safety: geofence](https://docs.px4.io/main/en/config/safety.html).
+- **Why PX4's geofence stays off.** With it on, PX4 takes over when the drone crosses it (hold or return, depending on `GF_ACTION`). That can hide a variant that drifts, which is what we are testing for. With it off, the drift shows in the log and the `stays_in_geofence` postcondition fails the run. The flight area is how far out the generator may place a mission; each mission's geofence sits inside it and comes from the mission's settings. See [Safety: geofence](https://docs.px4.io/main/en/config/safety.html).
 - **PX4 already blocks some missions itself.** It will not start a mission whose items conflict with a geofence, or one missing a takeoff or landing item when `MIS_TKO_LAND_REQ` asks for them. A first waypoint further than `MIS_DIST_1WP` from home only gets a warning. See [Mission mode: feasibility checks](https://docs.px4.io/main/en/flight_modes_mc/mission.html). Our generator could lean on this or copy it. Not decided.
 - **A log does not record every parameter.** `MIS_TKO_LAND_REQ` and `MIS_DIST_1WP` are in the SIH log and absent from the Gazebo log. A setting the log does not record cannot be confirmed from it.
 - **Speed limits are not in the config.** A start state and a goal state are both at rest, so a speed range has nothing to limit yet. If one is needed later, note that [MPC_XY_VEL_MAX](https://docs.px4.io/main/en/advanced_config/parameter_reference.html#MPC_XY_VEL_MAX) (12 m/s in both logs) is a configured limit on commanded horizontal speed. Mission cruise speed comes from [MPC_XY_CRUISE](https://docs.px4.io/main/en/advanced_config/parameter_reference.html#MPC_XY_CRUISE) (5 m/s in both logs, and the fastest flown was 5.06 m/s). A measured speed can also pass its parameter: [MPC_Z_VEL_MAX_DN](https://docs.px4.io/main/en/advanced_config/parameter_reference.html#MPC_Z_VEL_MAX_DN) is 1.5 m/s and the SIH flight descended at 1.70 m/s.
@@ -89,7 +89,7 @@ Can arm, enough battery and a path exists:
 - **Can arm: `assumed`, not checked.** PX4 reports it at the start of a run (`vehicle_status.pre_flight_checks_pass`, 1 in both logs). Nothing in a generated mission's values decides it. If arming fails, the harness marks the run INCONCLUSIVE, so a flaky run is not counted against a variant. `mission_starts` is the same idea: in a local trial of mine, 1 of 17 flights armed, PX4 refused the switch to Mission, and the runner disarmed it. That log never leaves the ground and ends with disarm reason 4 (external command). Checked as a normal flight it would read FAIL.
 - **Enough battery for the trip: not checked.** The simulated battery stops draining at 50% by default ([Simulate failsafes](https://docs.px4.io/main/en/simulation/failsafes.html)), and the measured minimum rounds to 0.50 on both flights, so a battery condition can't fail in the default simulator. A route-length limit was considered and cut: the geofence and the waypoint count already cap the route.
 - **A path exists: no rule needed for the demo.** With no-fly zones dropped, the only area rule is the flight area, a cylinder. A straight leg between two points inside it stays inside it. PX4 can round turns and climbs on return ([Mission mode](https://docs.px4.io/main/en/flight_modes_mc/mission.html)), which is why a mission's geofence has to clear `RTL_RETURN_ALT` with some room. If no-fly zones or obstacles come back, this needs a real check.
-- **Equipment: checked through the tasks, not by its own rule.** The vehicle type sets `has_camera` and `has_grippers`, and a task's `needs` says what equipment it requires. `every_change_has_a_task` runs the plan step on the candidate, so a mission that needs equipment the drone doesn't have has no plan and is rejected.
+- **Equipment: checked through the tasks, not by its own rule.** The vehicle type sets `has_camera` and `has_grippers`, and a task's `needs` says what equipment it requires. `every_change_has_a_task` runs the plan step on the drawn mission, so a mission that needs equipment the drone doesn't have has no plan and is rejected.
 
 ## 4. Tasks to plan items
 
@@ -106,7 +106,7 @@ Result: `takeoff`, `goto W1`, `return_home`. Those are the three items in our `s
 
 - **Why compare the states instead of just visiting every waypoint.** For our current missions both give the same plan. The difference shows up with anything else: a waypoint with `clicked_pic` false in both states gets a `goto` (its `visited` changed) but no `take_picture`. One rule covers every task.
 - **The difference alone isn't enough.** Takeoff and return leave no net change between start and goal. They come from `needs` and from where the goal state puts the agent.
-- Takeoff height is proposed as the height of the first waypoint the plan flies to. Our three plans already do that (20, 20 and 30 m). Hold time and waypoint order come from the mission's postconditions, which the plan step reads along with the two states. With no order asked for, it uses waypoint id order.
+- Takeoff height is proposed as the height of the first waypoint the plan flies to (`$height` in `inputs`). Our three plans already do that (20, 20 and 30 m). Hold time (`$hold_s`) and waypoint order come from the mission's postconditions, which the plan step reads along with the two states. With no order asked for, it uses waypoint id order.
 
 The medium mission adds an order requirement. Its fourth waypoint has the same coordinates and altitude as the takeoff item. Checking each waypoint's first visit could put W4 first on a correct run. Look for a qualifying W4 visit after W3. Flown in a local spike of mine (three flights, 2 m radius): "a visit to each waypoint after the previous one's visit" passed two correct flights and failed one flown in the wrong order. First-visit order failed the two correct flights.
 
@@ -126,7 +126,7 @@ No task here lands away from home. `return_home` is the only task that sets `age
 |---|---|---|---|---|
 | `takeoff` | 22, [MAV_CMD_NAV_TAKEOFF](https://mavlink.io/en/messages/common.html#MAV_CMD_NAV_TAKEOFF) | 3 | 5 and 6: latitude and longitude. 7: height. | |
 | `goto` | 16, [MAV_CMD_NAV_WAYPOINT](https://mavlink.io/en/messages/common.html#MAV_CMD_NAV_WAYPOINT) | 3 | 1: hold time in seconds. 2: acceptance radius, `tolerances.at_waypoint.within_m` (2 m proposed; at 0 PX4 uses `NAV_ACC_RAD`, see section 5). 5 to 7: latitude, longitude, height. | |
-| `return_home` | 20, [MAV_CMD_NAV_RETURN_TO_LAUNCH](https://mavlink.io/en/messages/common.html#MAV_CMD_NAV_RETURN_TO_LAUNCH) | 2 | Nothing. The demo assumes RTL_TYPE 0, no rally points and automatic landing enabled. | |
+| `return_home` | 20, [MAV_CMD_NAV_RETURN_TO_LAUNCH](https://mavlink.io/en/messages/common.html#MAV_CMD_NAV_RETURN_TO_LAUNCH) | 2 | Nothing. `px4_setup` sets RTL_TYPE 0 and RTL_LAND_DELAY 0 (land on arrival). Our plans have no rally points. | |
 | `take_picture` | 203, [MAV_CMD_DO_DIGICAM_CONTROL](https://mavlink.io/en/messages/common.html#MAV_CMD_DO_DIGICAM_CONTROL) | 2 | 5: 1 takes one picture. | |
 
 - **Frame 3** means latitude and longitude with height measured from home. **Frame 2** is MAV_FRAME_MISSION. RTL has no position arguments. See [MAV_FRAME](https://mavlink.io/en/messages/common.html#MAV_FRAME).
@@ -135,10 +135,10 @@ No task here lands away from home. `return_home` is the only task that sets `age
   - Flown again since with the 2 m radius on `gz_x500_mono_cam`: one capture, 0.04 m from W1. The same plan on the plain `gz_x500` with the trigger off logged the command and no capture. Not flown: a picture at a waypoint with no hold.
   - The trigger needs `TRIG_MODE` 1, set when PX4 starts ([trigger modes](https://docs.px4.io/main/en/camera/fc_connected_camera.html)). The docs say the camera on `gz_x500_mono_cam` cannot yet be used for image capture ([Gazebo vehicles](https://docs.px4.io/main/en/sim_gazebo_gz/vehicles.html)), so nothing ties a rendered frame to PX4's trigger.
   - PX4 lists two ways to take one picture in a mission. Command 203 goes through PX4's camera trigger driver, and each trigger is logged as `camera_capture` ([Cameras connected to flight controller outputs](https://docs.px4.io/main/en/camera/fc_connected_camera.html), [camera architecture](https://docs.px4.io/main/en/camera/camera_architecture.html)). Command 2000 (MAV_CMD_IMAGE_START_CAPTURE) is documented as passed on to a MAVLink camera without PX4's trigger and feedback modules ([MAVLink cameras](https://docs.px4.io/main/en/camera/mavlink_v2_camera.html)), though the one spike flight that used 2000 logged a 203 and a capture anyway. The config uses 203 because it is the documented route into the log. The task needs the agent at the waypoint, so it goes straight after that waypoint's `goto`.
-- PX4's reading of each command's params is in [VehicleCommand](https://docs.px4.io/main/en/msg_docs/VehicleCommand.html). The item keys in `plan_item_defaults` are from the [QGroundControl plan format](https://docs.qgroundcontrol.com/master/en/qgc-dev-guide/file_formats/plan.html). That page also lists `doJumpId`, numbered from 1, and our three plans all carry it, so the plan step numbers the items the same way. Our `simple.plan` uses `AltitudeMode: 1` with `Altitude` equal to param 7. The medium plan omits both keys on RTL.
+- PX4's reading of each command's params is in [VehicleCommand](https://docs.px4.io/main/en/msg_docs/VehicleCommand.html). The item keys in `plan_item_defaults` are from the [QGroundControl plan format](https://docs.qgroundcontrol.com/master/en/qgc-dev-guide/file_formats/plan.html). That page also lists `doJumpId`, numbered from 1, and our three plans all carry it, so the plan step numbers the items the same way (`doJumpId: $index`). Our `simple.plan` uses `AltitudeMode: 1` with `Altitude` equal to param 7 (`Altitude: $item_height`). The medium plan omits both keys on RTL.
 - **The hold time in the plan is a command to PX4.** The PX4 docs describe param 1 as time to stay inside the acceptance radius ([NavigatorMissionItem](https://docs.px4.io/main/en/msg_docs/NavigatorMissionItem.html), `time_inside`). The pinned build does something slightly different: it marks the waypoint reached once, then counts from that moment without checking the drone is still inside ([source](https://github.com/PX4/PX4-Autopilot/blob/fca3df865af36124a28c9d607e850f111dbaaea9/src/modules/navigator/mission_block.cpp#L380-L433)). Whether the drone held for five seconds by our definition is a separate question (section 5).
 
-PX4 parameters that change what an item does. `px4_setup` sets `RTL_TYPE`, `RTL_LAND_DELAY`, `RTL_RETURN_ALT` and `NAV_MC_ALT_RAD` (all at the values below). The rest stay at PX4's defaults:
+PX4 parameters that change what an item does. `px4_setup` sets `RTL_TYPE`, `RTL_LAND_DELAY`, `RTL_RETURN_ALT` and `NAV_MC_ALT_RAD` (all at the values below; `NAV_MC_ALT_RAD` by pointing at `tolerances.at_waypoint.height_within_m`). The rest stay at PX4's defaults:
 
 | Parameter | In both logs | What it changes |
 |---|---|---|
@@ -154,7 +154,7 @@ Docs: [Return mode (multicopter)](https://docs.px4.io/main/en/flight_modes_mc/re
 
 This shows up in the logs: the mission asks for 20 m, and the highest point flown is 30.05 m (Gazebo) and 31.08 m (SIH), because the return leg climbs to `RTL_RETURN_ALT`. Both went a little over it, which is why the `stays_in_geofence` precondition adds a clearance. The SIH flight also drifted 0.98 m past W1 while climbing.
 
-`$home_lat` and `$home_lon` must be known before the run, so they come from the simulator's configured start position: `base_lat_lon` in the config, which is quick-setup's default. The log's `home_position` can confirm them afterwards. The helper that turns waypoint positions in metres into latitude and longitude is still to write. The `.plan` file's `plannedHomePosition` takes an altitude above sea level as its third value, which is not our z of 0. Our `simple.plan` has 0 there and `medium.plan` has 491.
+The home latitude and longitude must be known before the run, so they come from the simulator's configured start position: `base_lat_lon` in the config, which is quick-setup's default. Takeoff's params point at it. The log's `home_position` can confirm them afterwards. The helper that turns waypoint positions in metres into latitude and longitude (`metres_to_lat_lon` in `helpers`) is still to write. The `.plan` file's `plannedHomePosition` takes an altitude above sea level as its third value, which is not our z of 0. Our `simple.plan` has 0 there and `medium.plan` has 491.
 
 ## 5. Tolerances: what the logs show
 
@@ -186,7 +186,7 @@ The tolerance values in `px4.yaml` are proposals. This section is the evidence b
 | ~5 s, PX4 switches to return | 0.3 m, 0.25 m/s | 0.5 m, 0.3 m/s |
 | 6 s | climbing at 2.0 m/s | climbing at 1.4 m/s |
 
-The longest time within 10 m sideways and 0.8 m in height of W1 while moving slower than 0.5 m/s horizontally is 1.82 s (Gazebo) and 1.58 s (SIH). So none of the candidate hold checks works with the plan as flown:
+The longest time within 10 m sideways and 0.8 m in height of W1 while moving slower than 0.5 m/s horizontally is 1.82 s (Gazebo) and 1.58 s (SIH). So none of these hold checks works with the plan as flown:
 
 - Within PX4's own zone (10 m, 0.8 m) for 5 s passes (6.04 s, 5.96 s), but it measures the approach. A variant that creeps in slowly would pass without ever stopping.
 - Within 2 m for 5 s fails both correct flights (3.36 s, 3.52 s).
@@ -194,7 +194,7 @@ The longest time within 10 m sideways and 0.8 m in height of W1 while moving slo
 
 The proposal: one "at the waypoint" zone (`tolerances.at_waypoint`, 2 m sideways and 0.8 m in height), written into `goto`'s acceptance radius and used by `visited` and the hold check. PX4 then only starts the hold once the drone is within 2 m, and the drone keeps closing in during it. The hold check is the longest unbroken time in that zone.
 
-**Flown twice (Gazebo at 4x, local runs of mine).** A 5 s hold measured 6.11 s and 6.05 s in the zone. PX4 started its 5 s within 0.1 s of the drone entering the zone, and the drone was nearly still (under 0.5 m/s) for 4.48 s and 4.35 s, against under 2 s before. About 1.1 s of the measured time is the return's climb, straight up through the top 0.8 m of the zone.
+**Flown twice (Gazebo at 4x, local runs of mine).** A 5 s hold measured 6.11 s and 6.05 s in the zone. PX4 started its 5 s within 0.1 s of the drone entering the zone, and the drone was nearly still (under 0.5 m/s) for 4.48 s and 4.35 s, against under 2 s before. About 1.1 s of the measured time is the return's climb, straight up through the top 0.8 m of the zone. That is not a separate rule. It follows from the one rule: time at the waypoint runs from the first reading inside the zone to the first reading outside it, whatever PX4 is doing.
 
 Eight more local flights with holds of 0, 2, 3 and 4 s show the measure reads the hold asked for plus 1.06 to 1.11 s. A 4 s hold measured 5.06 s and 5.11 s, which passes a 5 s requirement. Which reading ends a stretch decides that one: measured to the last reading inside the zone, the first of those flights is 4.996 s. The config says the first reading outside. Holds of 3 s (4.08 s), 2 s (about 3.1 s) and 0 s (1.09 s) fail. So the check answers "was the drone at the waypoint for 5 s", not "did PX4 wait 5 s before leaving". Counting only samples where the vertical speed is under 0.5 m/s would cut the climb out: 4 s holds then read 4.52 s and 4.56 s and fail, and 5 s holds read about 5.5 s and pass. Not adopted: the proposal is that a hold means time at the waypoint, nothing more.
 

@@ -19,7 +19,7 @@ To run part of the suite, give pytest a file (`pytest tests/test_missions.py`) o
 - `tests/`: pytest tests in files named `test_*.py`. Name each test for the behavior it checks, such as `test_mission_ends_with_return_to_launch`.
 - `tests/fixtures/`: small sample data the tests use, committed to git (none yet). Each fixture comes with a note saying where it came from: PX4 commit, simulator, mission plan, and how it was trimmed. Raw `.ulg` files and run results stay out of git; `.gitignore` ignores `*.ulg` everywhere except `tests/fixtures/`.
 - `missions/`: the three mission plans. `tests/test_missions.py` checks each one against its written definition in [missions/README.md](../missions/README.md).
-- `platform_configs/`: the PX4 config. `tests/test_px4_config.py` checks that it loads, that every tolerance and PX4 setting it names exists, that its checks only use readings it defines, and that its tasks use the same commands and frames as `missions/simple.plan`. It does not check whether the values are right.
+- `platform_configs/`: the PX4 config. `tests/test_px4_config.py` checks that it loads, that it keeps to its own rules for how values are written (every name it points at exists, every `$` value and helper is listed, every check has a rule and uses readings it defines), and that its tasks and plan item fields match `missions/simple.plan`. It does not check whether the values are right.
 
 ## Rules
 
@@ -63,12 +63,15 @@ This list is the one place open decisions are tracked. Until one is decided, cod
 - What evidence can show a collision. The log can't; the simulator's contact record can.
 - The never-lands rule: when a log that ends airborne counts as FAIL rather than INCONCLUSIVE.
 - The RTL timing rule.
-- The dwell window across the RTL switch. `platform_configs/px4.yaml` proposes counting all the time at the waypoint, including after the return starts.
+- The dwell window across the RTL switch. `platform_configs/px4.yaml` proposes one rule: time at the waypoint runs from the first reading inside the zone to the first reading outside it. That includes the start of the return's climb (about 1.1 s in test flights, `docs/px4-mappings.md` section 5).
+- What a gap in the log does to the hold check. `docs/px4-mappings.md` section 5 has a proposal.
 - When a log counts as a complete flight, and how the checks combine into one verdict for a run. A log cut off after landing reads as a normal end today (R5 wants INCONCLUSIVE).
 - Fixture format (trimmed `.ulg` or extracted traces) and how they're produced. Fixtures come with the "Validate the verifier" work.
 - The verifier's language and libraries, command line and report format ("Implement verifier" card).
 - Whether testers also stay out of the verifier's code, and who reviews verifier PRs.
 - Which simulator the baseline runs use. The sample logs are Gazebo `x500`; quick-setup also runs SIH.
+- Whether a mission should test PX4's own geofence. It is off in every flight today (`px4_setup`), so a variant that breaks it would go unnoticed.
+- Where the shared helper functions live. `platform_configs/px4.yaml` lists them under `helpers`; none is written yet.
 - Whether CI on recorded logs meets the course's Research CI gate ([Repo Checkpoints](https://capstone.alexulbrich.com/assignments/repo-checkpoints/#what-ci-must-do)). To ask the TA.
 
 The verifier plan lays out options for the tolerances, RTL timing and never-lands questions, and lists some of them as questions for Manish. Record a decision that is expensive to reverse (tolerances, the report format, which simulator the baseline uses) in an ADR (`docs/adr/`); record smaller ones in the document that owns them. Either way, remove it from this list.
