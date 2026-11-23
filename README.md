@@ -44,6 +44,7 @@ The checks above don't need PX4. Flying the missions in `missions/` does. PX4 is
 | Path | What's there |
 |---|---|
 | [`missions/`](missions/) | QGroundControl `.plan` files for the simple, medium, and survey missions |
+| [`plan_step/`](plan_step/) | The plan step: turns a mission into a `.plan` file (`python -m plan_step MISSION_FOLDER`). Covers the simple mission for now |
 | [`tests/`](tests/) | pytest tests; today they check the mission plans against their written definitions, and that the PX4 config hangs together. `tests/fixtures/` holds small test fixtures |
 | [`platform_configs/`](platform_configs/) | One config file per platform. `px4.yaml` has the preconditions, task mappings, log readings and tolerances for PX4 |
 | [`docs/`](docs/) | Requirements, design, risks, decisions (`docs/adr/`), testing, definitions, the PX4 mappings, and sources outside the repo |
