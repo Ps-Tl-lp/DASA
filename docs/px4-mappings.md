@@ -216,7 +216,16 @@ The home latitude and longitude must be known before the run, so they come from 
 
 ## 5. Tolerances: what the logs show
 
-The tolerance values in `px4.yaml` are proposals. This section is the evidence behind them.
+The tolerance values in `px4.yaml` are decided. Requirements are chosen, and noise allowances come from baseline runs (ADR 0005). This section is the evidence behind them.
+
+| Measured, complete Gazebo flights at 4x | fca3df865a (the pin) | 6d1773f4c1 (PX4's Docker image) |
+|---|---|---|
+| Closest approach to a held waypoint | 0.010 to 0.266 m (15) | 0.013 to 0.279 m (6) |
+| Height error while holding | up to 0.091 m (15) | up to 0.048 m (6) |
+| End distance from the goal | 0.019 to 0.069 m (15) | 0.018 to 0.085 m (6) |
+| End speed | 0.00 m/s (15) | 0.00 m/s (6) |
+| Overshoot above the 30 m return climb | up to 0.059 m (8) | up to 0.054 m (3) |
+| Log ground truth against Gazebo's recording | not flown | up to 5.5 µm (8) |
 
 **Time near W1.** W1 is at (50, 0, 20) and the plan tells PX4 to hold 5 s. The table gives the time spent near W1, measured two ways. For the single unbroken visit in each case, subtract the first inside timestamp from the next outside timestamp. This estimates the crossing times to sample resolution. The nominal interval is 0.02 s, with gaps up to 0.04 s in Gazebo.
 
@@ -267,6 +276,6 @@ That is the planned hold −0.05 to +0.24 s, whichever way the drone leaves. Wit
 - **Elsewhere:** PX4's own tests check a mission only while its item index is in range, ArduPilot's `wait_waypoint` fails if the vehicle leaves AUTO, and PGFuzz counts a hold only in LOITER.
 - **A variant can't gain by faking the mode.** `nav_state` is PX4's own report, but the mode condition only ever shortens a stretch. A variant that claims it is still in mission mode gets at most what the zone alone would give.
 
-**`at_goal.within_m`.** The goal state says the drone ends at (0, 0, 0). It ended 0.08 m away in the Gazebo log and 0.28 m away in the SIH log. An exact comparison would fail both. Seventeen more Gazebo flights from a local trial of mine (a newer v1.18 release candidate, in PX4's Docker image) ended 0.01 to 0.09 m away. **Proposed: 0.5 m.** Across 28 complete Gazebo flights of mine the furthest end point was 0.09 m from the base, so 0.5 m leaves room without letting a landing somewhere else pass. A flight with GPS switched off in the air ended 6.92 m away. SIH lands less precisely, up to 1.09 m off at 10x speed, so it would need a larger value.
+**`at_goal.within_m`.** The goal state says the drone ends at (0, 0, 0). It ended 0.08 m away in the Gazebo log and 0.28 m away in the SIH log. An exact comparison would fail both. Seventeen more Gazebo flights from a local trial of mine (a newer v1.18 release candidate, in PX4's Docker image) ended 0.01 to 0.09 m away. **Decided: 0.5 m** (a requirement, ADR 0005). Across 28 complete Gazebo flights of mine the furthest end point was 0.09 m from the base, so 0.5 m leaves room without letting a landing somewhere else pass. A flight with GPS switched off in the air ended 6.92 m away. SIH lands less precisely, up to 1.09 m off at 10x speed, so it would need a larger value.
 
-**At rest.** SIH's final velocity rounds to zero on each axis but its north component is about 2.43 × 10⁻⁸ m/s. A goal velocity needs its own comparison in m/s. **Proposed: at rest means slower than 0.1 m/s.** Every complete flight logged so far ended at 0.00 m/s.
+**At rest.** SIH's final velocity rounds to zero on each axis but its north component is about 2.43 × 10⁻⁸ m/s. A goal velocity needs its own comparison in m/s. **Decided: at rest means slower than 0.1 m/s** (a requirement). Every complete flight logged so far ended at 0.00 m/s.

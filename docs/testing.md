@@ -58,7 +58,6 @@ Log contents:
 
 This list is the one place open decisions are tracked. Until one is decided, code or a test that depends on it gets a clearly marked placeholder (a comment starting `PLACEHOLDER:` that names the open decision), and the PR lists it. Don't pick a value or rule silently.
 
-- Tolerance values, and where they are defined. ADR 0004 proposes `platform_configs/px4.yaml`, and every value marked `PROPOSED` there is still open.
 - How to show a picture was taken, not just that PX4 triggered the camera.
 - What evidence can show a collision. The log can't; the simulator's contact record can.
 - The never-lands rule: when a log that ends airborne counts as FAIL rather than INCONCLUSIVE.

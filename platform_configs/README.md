@@ -2,7 +2,7 @@
 
 One file per platform. `px4.yaml` is the only one so far. It holds everything PX4-specific the pipeline needs: which drones exist, the rules a generated mission has to pass, how a task becomes a `.plan` item, what to read from the log, and how the readings are judged.
 
-Values marked `PROPOSED` in the file are not decided yet. They are tracked in [docs/testing.md](../docs/testing.md#not-decided-yet).
+Values marked `PROPOSED` in the file are not decided yet. They are tracked in [docs/testing.md](../docs/testing.md#not-decided-yet). Each tolerance says whether it is a requirement or a noise allowance, and what evidence is behind it ([ADR 0005](../docs/adr/0005-tolerance-values.md)).
 
 ## Who uses which part
 
