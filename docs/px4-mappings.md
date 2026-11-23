@@ -225,7 +225,7 @@ The tolerance values in `px4.yaml` are decided. Requirements are chosen, and noi
 | End distance from the goal | 0.019 to 0.069 m (16) | 0.018 to 0.085 m (12) |
 | End speed | 0.00 m/s (16) | 0.00 m/s (12) |
 | Highest point minus the 30 m return climb (waypoints below 30 m) | +0.013 to +0.059 m (9) | −0.033 to +0.054 m (3) |
-| Log ground truth against Gazebo's recording | not flown | up to 5.3 µm (5 with a full recording) |
+| Log ground truth against Gazebo's recording | not flown | up to 5.2 µm (5 with a full recording) |
 
 Every number in this table and in `px4.yaml`'s tolerance comments comes from one script, `reviews/2026-11-23/evidence.py` in the local prototype, over 28 complete flights.
 
@@ -234,9 +234,11 @@ Every number in this table and in `px4.yaml`'s tolerance comments comes from one
 | Mission and plan | Hold flown | fca3df865a | 6d1773f4c1 | Role |
 |---|---|---|---|---|
 | M01 fixture (`tests/fixtures/m01/mission.plan`: W1 50 m north, 20 m up) | 5 s, as the mission asks | 3 (R02, smoke S01, S02cam) | 3 (smoke D01, spike GZ01, GZ02) | Passing reference runs |
-| Generated M02, seed 7 (`mission_settings/simple.yaml`) | 5 s, as the mission asks | 5 | 3 | Passing reference runs |
-| The same M02, with the hold cut | 4 s | 2 | 3 | Stand-ins for a variant that cuts the hold; expected to fail the 5 s hold |
-| The same M02, with the hold cut | 2 s | 4 | 3 | The same |
+| Generated M02, seed 7, current generator (W1 at 66.4, 92.4, 34.3 m) | 5 s, as the mission asks | 3 | 3 | Passing reference runs |
+| The same mission, with the hold cut | 4 s | 2 | 3 | Stand-ins for a variant that cuts the hold; expected to fail the 5 s hold |
+| The same mission, with the hold cut | 2 s | 2 | 3 | The same |
+| Generated M02, seed 7, an earlier generator (W1 at −153.7, 119.5, 7.2 m): a different mission | 5 s | 2 | 0 | Passing reference runs |
+| That earlier mission, with the hold cut | 2 s | 2 | 0 | Stand-ins for a variant that cuts the hold |
 | Generated M01, seeds 1 and 2 | 5 s, as the mission asks | 2 | 0 | Passing reference runs |
 
 **Not in the baseline:**
@@ -259,8 +261,8 @@ Medium and survey have no reference runs under these rules yet.
 - **The straight-line numbers include part of the return.** The return starts with a climb straight up from 20 m to 30 m above W1, so the drone stays "near" W1 after it has stopped holding. The second measure uses separate horizontal and height limits, like the PX4 arrival check.
 - **PX4 switched to return** 4.96 s (Gazebo) and 5.08 s (SIH) after first coming within 10 m and 0.8 m of W1. See "What the 5 s hold actually does" below.
 - **"Visited" passes either way in these two flights.** The closest the drone got to W1 was 0.22 m (Gazebo) and 0.36 m (SIH). Both hold at W1. Medium and survey give every waypoint a hold of 0. With the 2 m radius, three medium-style flights passed 0.48 to 1.14 m from each fly-through waypoint, with 23 to 30 log samples inside each zone at 4x.
-- **Sim speed changes the sample spacing in Gazebo.** In a local Docker trial of mine the gap between log samples was 0.02 s at 1x, 0.07 s at 4x and 0.14 s at 8x. SIH stayed at 0.02 s even at 10x. At 4x the log also drops a sample now and then: one 0.136 s gap in about 15,000 samples across 11 flights. It fell while the drone was still at W1, just after PX4 had switched to the return. The hold check should allow gaps up to 0.2 s for that. At 8x one dropped sample would be longer than 0.2 s, so flying faster than 4x needs a bigger allowance.
-- **Plan positions and Gazebo positions differ a little.** The plan step turns metres into latitude and longitude on PX4's sphere (`metres_to_lat_lon`), and Gazebo uses WGS84. Measured as the mean east-west offset over a hold's samples moving slower than 0.3 m/s, in 14 local flights with a waypoint 92 to 143 m east or west of the base the held position sat 0.19 to 0.36 m further out than planned: 69 to 96% of what WGS84 predicts there (0.27 to 0.42 m), with the 4 s holds at the low end. WGS84 predicts 0.59 m at 200 m. One flight at 46 m sat 0.02 m out, against 0.14 m predicted. So WGS84 is the likely cause of most of the offset. It fits inside `within_m`, so the sphere stays: it matches PX4 and our plans exactly.
+- **Sim speed changes the sample spacing in Gazebo.** In a local Docker trial of mine the gap between log samples was 0.02 s at 1x, 0.07 s at 4x and 0.14 s at 8x. SIH stayed at 0.02 s even at 10x. At 4x the log also drops a sample now and then: one 0.136 s gap in about 15,000 samples across 11 native flights on the pin. It fell while the drone was still at W1, just after PX4 had switched to the return. Position readings now come from Gazebo's recording, which is also 0.068 s apart at 4x; no recording gap over 0.076 s has been seen yet. `tolerances.log_gap_max_s` (0.2 s) covers one dropped sample in either. At 8x one dropped sample would be longer than 0.2 s, so flying faster than 4x needs a bigger allowance.
+- **Plan positions and Gazebo positions differ a little.** The plan step turns metres into latitude and longitude on PX4's sphere (`metres_to_lat_lon`), and Gazebo uses WGS84. Measured as the mean east-west offset over a hold's samples moving slower than 0.3 m/s, in 14 local flights with a waypoint 92 to 143 m east or west of the base the held position sat 0.19 to 0.36 m further out than planned: 69 to 96% of what WGS84 predicts there (0.27 to 0.42 m), with the 4 s holds at the low end. WGS84 predicts 0.59 m at 200 m. One flight at 46 m sat 0.02 m out, against 0.14 m predicted. The held position also sits short of the waypoint on the north axis: 0.04 to 0.18 m in 20 of those 21 flights with a slow hold, where WGS84 predicts at most 0.02 m. That shortfall isn't WGS84, and an offset like it may be inside the east figure too, so WGS84 is a likely part of the east offset, not shown to be most of it. It fits inside `within_m`, so the sphere stays: it matches PX4 and our plans exactly.
 - **A log gap during a hold (decided: `hold_at.max_gap`, `tolerances.log_gap_max_s`).** If the log skips more than 0.2 s during a stretch at the waypoint, that stretch doesn't count. A stretch that already proves the hold stays a PASS. With no such stretch, a log with a skip anywhere gives INCONCLUSIVE and not FAIL, to keep the rule simple: a FAIL needs a log with no holes. A stretch still open when the log ends counts up to its last sample.
 
 **What the 5 s hold actually does.** With `goto`'s acceptance radius at 0, PX4 counts W1 reached as soon as the drone is within `NAV_ACC_RAD` (10 m) and starts the 5 s from there. The drone is still doing about 5 m/s at that moment. It spends the 5 s slowing down on its way in, arrives, and starts climbing for the return straight away.

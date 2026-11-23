@@ -32,6 +32,7 @@
 #   reads: [NAMES]      The readings a check uses. The names come from `readings`.
 #   rate_of: agent.x    A reading's name (from `readings`), not a state property. The same goes
 #                       for the names in `reads`, even where they look like state properties.
+#   every_mission: true A check that runs on every mission, whether its mission.yaml lists it or not.
 #   start_state, last_reading, exact
 #                       A keyword. The comment next to it says what it means.
 #
@@ -296,7 +297,8 @@ time_zero_topics: [vehicle_local_position_groundtruth, vehicle_land_detected]
 
 # A run flown before the harness recorded Gazebo (its run.json has no `recording` key; the M01
 # fixture's R02, for one) is read from the log alone, with these rows in place of the ones
-# above, and its readings say so.
+# above, and its readings say so. Each of its readings keeps every sample its topic logged: the
+# log-only path isn't cut to the ground-truth span.
 log_only_readings:
   agent.x:          { source: log, topic: vehicle_local_position_groundtruth, field: x,  subtract_first: true }
   agent.y:          { source: log, topic: vehicle_local_position_groundtruth, field: y,  subtract_first: true }
@@ -340,6 +342,17 @@ cross_check:
 # log alone; one that names a recording it doesn't have is INCONCLUSIVE.
 # A check is FAIL only on a violation seen in the log. One the log stopped too early to settle
 # is INCONCLUSIVE, so a flight cut short in the air is never FAIL for being cut short.
+# Two more cases where the evidence can't settle a check:
+#   a gap   if the position readings have a gap longer than tolerances.log_gap_max_s, a check
+#           that would FAIL or PASS because something didn't happen (no visit, hold, order step,
+#           or reading outside the geofence) is INCONCLUSIVE, since the gap could hide it. A
+#           check that FAILs on something that did happen (a reading outside the geofence, a
+#           disarm in the air) stays FAIL.
+#   missing a check whose reading is empty, or whose topic is in missing_topics, is
+#           INCONCLUSIVE. camera_triggered_at is the exception: its topic is absent when nothing
+#           triggered, so an absent topic with camera_trigger_mode 1 means no picture.
+# The verifier reads the cross-check from readings.json's cross_check and reports it as one more
+# check, evidence_cross_check.
 
 # State properties that aren't read from the log.
 # The positions of the base and the waypoints are part of the mission and never change, so they
@@ -352,11 +365,13 @@ not_in_log:
 # State properties worked out from several readings, using the mission's waypoints.
 # Outcomes, for both: PASS when the readings agree with the goal's value. FAIL when they don't
 # and the log ends on the ground. INCONCLUSIVE when the goal wants true, the readings don't show
-# it yet and the log ends in the air, because it could still happen. A property already true in
+# it yet and the log ends in the air, because it could still happen. FAIL at once when the goal
+# wants false and the readings show true, wherever the log ends. A property already true in
 # the start state needs no task: PASS if the goal keeps it, FAIL if it doesn't. A goal waypoint
 # that doesn't list clicked_pic gets no clicked_pic check.
-# For clicked_pic only: if the goal wants a picture but camera_trigger_mode is 0 (the trigger was
-# off), the result is INCONCLUSIVE, because no capture could have been recorded.
+# For clicked_pic only: a trigger counts at the waypoint if the latest position reading at or
+# before it is inside the zone. If the goal wants a picture but camera_trigger_mode is 0 (the
+# trigger was off), the result is INCONCLUSIVE, because no capture could have been recorded.
 derived:
   waypoint.visited:
     reads: [agent.x, agent.y, agent.z]
@@ -411,15 +426,16 @@ postconditions:
   # PX4's mode at a reading is the last nav_state at or before it. A position reading before
   # the first nav_state can't start a stretch, and a log with no nav_state gives INCONCLUSIVE.
   # PASS if one stretch lasts at least the mission's hold minus short_by_at_most.
-  # FAIL if none does and the log ends on the ground.
-  # INCONCLUSIVE if none does and the log ends in the air, or if the log stops while the drone
-  # is still there and the hold isn't complete.
+  # FAIL if none does, the log ends on the ground, and the position readings have no gap longer
+  # than max_gap.
+  # INCONCLUSIVE if none does and the log ends in the air or has such a gap, or if the log stops
+  # while the drone is still there and the hold isn't complete.
   # A gap longer than max_gap between consecutive position readings ends a stretch at the last
   # position reading before the gap: no time is credited across it. Gaps in nav_state don't
-  # count: PX4 publishes it about every 0.5 s and on each change. A stretch that already proves
-  # the hold still passes. If none does and the position readings have such a gap anywhere, the
-  # result is INCONCLUSIVE, not FAIL: a FAIL needs a log with no holes. A stretch still open when
-  # the log stops ends at its last position reading.
+  # count: PX4 publishes it about every 0.5 s and on each change. After a gap, the next position
+  # reading inside the zone in mission mode can start a new stretch. A stretch that already
+  # proves the hold still passes. A stretch still open when the log stops ends at its last
+  # position reading.
   # mission.yaml: - hold_at: {waypoint: W1, min_s: 5}
   hold_at:
     reads: [agent.x, agent.y, agent.z, nav_state]
@@ -483,6 +499,7 @@ helpers:
 #                    rest". Chosen, not measured. The comment gives the measured error as margin.
 #   noise allowance  how much correct flights vary. Set and changed only from baseline runs, by
 #                    ADR 0005's method. The comment names the flights and PX4 builds.
+# The noise allowances are provisional until ADR 0005's first 10-run baseline per setup.
 # Counts are complete Gazebo flights at 4x unless a comment says otherwise. fca3df865a is the
 # pinned build; 6d1773f4c1 is the
 # one in PX4's Docker image. docs/px4-mappings.md section 5 has the numbers.
@@ -494,8 +511,8 @@ tolerances:
   # no field for the height, so px4_setup points at height_within_m.
   at_waypoint:
     # Requirement, and PX4's acceptance radius (goto param 2). Margin: holds came within
-    # 0.007-0.266 m on fca3df865a (16 flights) and 0.013-0.279 m on 6d1773f4c1 (12); fly-through
-    # waypoints within 1.20 m (2 survey flights, fca3df865a native).
+    # 0.034-0.332 m during the hold on fca3df865a (16 flights) and 0.025-0.320 m on 6d1773f4c1
+    # (12); fly-through waypoints within 1.20 m (2 survey flights, fca3df865a native).
     within_m: 2
     # Requirement, and PX4's own NAV_MC_ALT_RAD default (px4_setup points here). Margin: held
     # within 0.091 m on fca3df865a (16) and 0.056 m on 6d1773f4c1 (12).
@@ -521,9 +538,10 @@ tolerances:
   # for one dropped log sample at 4x (0.136 s). Numbers: e2e-prototype reviews/2026-11-23/evidence.py.
   hold_short_by_s: 0.25
   # Noise allowance: the longest gap between position readings that doesn't end a hold
-  # stretch. At 4x readings are 0.068 s apart, and a dropped one makes 0.136 s: one in 15,247
+  # stretch. At 4x the log's samples and the recording's are both 0.068 s apart. The one dropped
+  # sample measured is a log one, 0.136 s: one in 15,247
   # samples across 11 native flights on fca3df865a (sim-spikes/2026-11-22-baseline-check), and
-  # none over 0.076 s in the 28 flights above. 0.136 s is more than half of 0.2 s, so ADR 0005's
+  # none over 0.076 s in the 28 flights above (log or recording). 0.136 s is more than half of 0.2 s, so ADR 0005's
   # investigate rule applies before the first baseline. Faster than 4x needs a larger value.
   log_gap_max_s: 0.2
   # Noise allowances: landed, worked out from the recorded position (readings.agent.landed). 28
@@ -535,7 +553,7 @@ tolerances:
     height_m: 0.1
     speed_m_s: 0.1
   # Noise allowance: how far the log's ground truth may be from the recording (cross_check). PX4
-  # logs it as float32, which rounded it by up to 5.3 um in 5 flights with a full recording (6d1773f4c1).
+  # logs it as float32, which rounded it by up to 5.2 um in 5 flights with a full recording (6d1773f4c1).
   cross_check_m: 0.0001
   # How close in sim time a recorded sample must be to a log sample to count as the same one.
   # Both sit on Gazebo's 4 ms physics step; in 5 flights every log sample had a recorded one at
@@ -553,4 +571,5 @@ sim:
   vehicle_model_prefix: x500 # every vehicle type's sim_model is an x500
   speed_factor: 4        # PX4_SIM_SPEED_FACTOR. Log readings are 0.068 s apart at 4x
   headless: true
+  flight_timeout_s: 300  # the harness waits this long for the disarm after the mission starts, then stops the run (reason timeout)
   px4_build: fca3df865a  # the pin. The evidence so far is 16 flights on it and 12 on 6d1773f4c1 (PX4's Docker image); each tolerance says which

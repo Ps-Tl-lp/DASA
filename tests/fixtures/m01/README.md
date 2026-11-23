@@ -50,23 +50,23 @@ Times are in seconds, positions in metres from the base (x north, y east, z up) 
 - **`source`:** `simulator`, `synthetic`, or what a copied run was made from.
 - **`log`:** the `.ulg` file's name, or `null`.
 - **`recording`:** the harness's Gazebo pose recording (`gz_pose.jsonl`). A harness that records always writes this key. If the named file is missing, empty or shorter than the log, the run is INCONCLUSIVE. Only a run flown before the harness recorded, like R02, has no `recording` key; it is read from the log alone.
-- **`record`:** what the run was flown with. For a simulator run, `px4_commit`, `simulator` and `speed` are required, because they say which tolerances apply (ADR 0005). Model, parameters and seed are optional.
+- **`record`:** an object with what the run was flown with. For a simulator run, `record.px4_commit`, `record.simulator` and `record.speed` are required, because they say which tolerances apply (ADR 0005). Model, parameters and seed are optional. `recording` is a file name in the run folder.
 
 **`readings.json`**
 - **Copied from `run.json`:** `mission_id`, `run_id`, `run_status`, and `reason` when the run has one.
 - **The readings:**
   - `position` and `velocity`: lists of `{t_s, x, y, z}`;
-  - `landed`, `nav_state` and `disarm_reason`: lists of `{t_s, value}`, with `landed` a boolean and the others integers;
+  - `landed`, `nav_state`, `disarm_reason` and `arming_state`: lists of `{t_s, value}`, with `landed` a boolean and the others integers;
   - `camera_triggered_at`: a list of `{t_s}`;
   - `camera_trigger_mode`: one value, the `TRIG_MODE` the log records (0 off, 1 on).
 - **Rounding:** times to 3 decimals, positions and velocities to 4.
 - **Time origin:** times are seconds from the earliest sample of `time_zero_topics` in the log. `time_zero_us` is that sample's PX4 timestamp, in microseconds, so the log's own clock can be recovered.
 - **Written by the log reader:**
-  - `sources`: `"log only"`, or one entry per reading naming its source (`gz_pose` or `log`);
+  - `sources`: the string `"log only"` for a run read from the log alone, or an object with one entry per reading naming its source (`gz_pose` or `log`). A schema has to allow both;
   - `missing_topics`: log topics a reading needed but the log lacks. Those readings are empty lists;
   - `cross_check`, for a recorded run: `{recording, compared, unmatched, over_limit, max_difference_m, publishers, verdict, reason}`.
 
-  R01, made up by hand, has none of these keys.
+  R01, made up by hand, has none of these keys, and no `time_zero_us` (it has no log). R01 and R02 are both log-only runs, so their velocity and `landed` stand for the log's own values: PX4's ground-truth velocity and land detector, not `rate_of` and the position rule.
 
 **`gz_pose.jsonl`** (the harness's Gazebo recording, named in `run.json`'s `recording`): one JSON object per line, as `platform_configs/px4.yaml` describes above its `readings`.
 - **Pose:** `{"k": "pose", "t": <sim seconds>, "p": [east, north, up]}` for the vehicle model.
@@ -86,6 +86,8 @@ Times are in seconds, positions in metres from the base (x north, y east, z up) 
 - **Each check has** `check`, `verdict` and a one-sentence `reason`. `waypoint`, `expected_s` and `observed_s` (2 decimals) appear where they apply.
 
 ## Cases to add when the verifier exists
+
+- **A position reading before the first `nav_state`:** a stretch can't start there. Neither run exercises this (both have a mode reading first).
 
 - **R02 cut at 45 s:** the drone is still in the air, about 56 m from the goal. Expected: INCONCLUSIVE overall, with `goal_check` and `disarmed_after_landing` INCONCLUSIVE, `hold_at` PASS (its 5.03 s stretch is already complete) and `visited` PASS. A cut-short flight is never FAIL for being cut short.
 - **A hold across a log gap:** the last position reading inside the zone is at 4.72 s into the stretch, and the next reading, 0.23 s later (more than `log_gap_max_s`), is outside. The stretch ends at 4.72 s, so a 5 s hold (pass mark 4.75 s) is not met. Because the gap could hide the drone leaving, the result is INCONCLUSIVE, not FAIL.

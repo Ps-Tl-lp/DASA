@@ -27,6 +27,9 @@ What we mean by these words across the repo. If one doesn't match how you use it
 | Flyer | The part of the harness that uploads the plan to PX4, arms, starts the mission and waits for the disarm. |
 | Recording | The harness's record of Gazebo's pose of the vehicle, made outside PX4. Position, velocity and `landed` are read from it. |
 | Sample | One timed value of a reading. |
+| Position reading | One sample of `agent.x`, `agent.y` and `agent.z` together. Hold stretches and log gaps are measured over position readings. |
+| Baseline | The reference runs of unmodified PX4 that a mission's results and the noise allowances rest on (R8, ADR 0005). `docs/px4-mappings.md` section 5 lists them. |
+| Harness time limit | `sim.flight_timeout_s`: how long the harness waits for the disarm after the mission starts before it stops the run as `timeout`. |
 | Requirement | A tolerance that says what the mission counts as done, such as how close counts as at the waypoint. Chosen, not measured; the measured error is shown beside it as the margin (ADR 0005). |
 | Noise allowance | A tolerance that absorbs how much correct flights of the unmodified PX4 vary, such as how much shorter than the hold a stretch may read. Set only from baseline runs (ADR 0005). |
 | Reading | A value read from the log or from the harness's Gazebo recording, over the whole flight. Each reading names its source in `platform_configs/px4.yaml`. The verifier works from readings and never opens either file. |
