@@ -155,7 +155,13 @@ def test_every_reading_names_its_source():
         for name, row in CONFIG[section].items():
             assert row["source"] in {"gz_pose", "log"}, (section, name)
             if row["source"] == "log":
-                assert row["topic"] and row["field"], (section, name)
+                # a timed topic field, or one value from the log's parameters
+                assert (row.get("topic") and row.get("field")) or row.get(
+                    "parameter"
+                ), (
+                    section,
+                    name,
+                )
             else:
                 ways = {"field", "rate_of", "on_ground_m"} & set(row)
                 assert len(ways) == 1, (section, name)

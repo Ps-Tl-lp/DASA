@@ -36,6 +36,7 @@ Times are in seconds, positions in metres from the base (x north, y east, z up) 
 - **`mission_id`:** a string.
 - **`start`, `goal`:** the file names of the two states, beside it.
 - **`postconditions`:** a list with one item per postcondition, in the form `platform_configs/px4.yaml` gives next to each check, for example `- hold_at: {waypoint: W1, min_s: 5}`. `disarmed_after_landing` isn't listed, because every mission gets it.
+- **`preconditions`** (optional): the mission-specific ones, in the same form, for example `- stays_in_geofence: {max_distance_m: 60, max_height_m: 35}`. The global ones in `platform_configs/px4.yaml` apply to every mission and aren't listed.
 - **Generated missions** also carry the settings and seed they came from.
 
 **`start.xml`, `goal.xml`:** every property of the base, the agent and each waypoint, with its type and unit. A waypoint that doesn't list `clicked_pic` counts as false.
@@ -48,15 +49,16 @@ Times are in seconds, positions in metres from the base (x north, y east, z up) 
   - `sim_died`, `sim_setup`, `several_logs` and `no_log` from the harness.
 - **`source`:** `simulator`, `synthetic`, or what a copied run was made from.
 - **`log`:** the `.ulg` file's name, or `null`.
-- **`recording`:** the harness's Gazebo pose recording, or `null` or missing for a run read from the log alone.
-- **`record`** (optional): what the run was flown with, such as PX4 build, simulator, model, speed, parameters and seed.
+- **`recording`:** the harness's Gazebo pose recording (`gz_pose.jsonl`). A harness that records always writes this key. If the named file is missing, empty or shorter than the log, the run is INCONCLUSIVE. Only a run flown before the harness recorded, like R02, has no `recording` key; it is read from the log alone.
+- **`record`:** what the run was flown with. For a simulator run, `px4_commit`, `simulator` and `speed` are required, because they say which tolerances apply (ADR 0005). Model, parameters and seed are optional.
 
 **`readings.json`**
 - **Copied from `run.json`:** `mission_id`, `run_id`, `run_status`, and `reason` when the run has one.
 - **The readings:**
   - `position` and `velocity`: lists of `{t_s, x, y, z}`;
   - `landed`, `nav_state` and `disarm_reason`: lists of `{t_s, value}`, with `landed` a boolean and the others integers;
-  - `camera_triggered_at`: a list of `{t_s}`.
+  - `camera_triggered_at`: a list of `{t_s}`;
+  - `camera_trigger_mode`: one value, the `TRIG_MODE` the log records (0 off, 1 on).
 - **Rounding:** times to 3 decimals, positions and velocities to 4.
 - **Time origin:** times are seconds from the earliest sample of `time_zero_topics` in the log. `time_zero_us` is that sample's PX4 timestamp, in microseconds, so the log's own clock can be recovered.
 - **Written by the log reader:**
@@ -74,13 +76,19 @@ Times are in seconds, positions in metres from the base (x north, y east, z up) 
 
 **`expected-verdict.json`** (and the verifier's `verdict.json`)
 - **Top level:** `mission_id`, `run_id`, and `verdict` (PASS, FAIL or INCONCLUSIVE).
+- **`preconditions`:** one entry per precondition the generator checked before the flight, global or mission-specific, each with `check`, `verdict` (PASS or FAIL) and a `reason`. A mission is only flown if all of them PASS. A fixture made by hand may leave this out.
 - **`checks`:** one per check, in this order:
-  1. `visited` and `clicked_pic`, for each goal waypoint;
+  1. `visited` for each goal waypoint, and `clicked_pic` for each that lists it;
   2. `goal_check`;
   3. the mission's postconditions, in their order (`hold_at`, `visits_in_order`, `stays_in_geofence`);
   4. `disarmed_after_landing`;
   5. `evidence_cross_check`, for a recorded run.
 - **Each check has** `check`, `verdict` and a one-sentence `reason`. `waypoint`, `expected_s` and `observed_s` (2 decimals) appear where they apply.
+
+## Cases to add when the verifier exists
+
+- **R02 cut at 45 s:** the drone is still in the air, about 56 m from the goal. Expected: INCONCLUSIVE overall, with `goal_check` and `disarmed_after_landing` INCONCLUSIVE, `hold_at` PASS (its 5.03 s stretch is already complete) and `visited` PASS. A cut-short flight is never FAIL for being cut short.
+- **A hold across a log gap:** the last position reading inside the zone is at 4.72 s into the stretch, and the next reading, 0.23 s later (more than `log_gap_max_s`), is outside. The stretch ends at 4.72 s, so a 5 s hold (pass mark 4.75 s) is not met. Because the gap could hide the drone leaving, the result is INCONCLUSIVE, not FAIL.
 
 ## How the verdicts were worked out
 

@@ -8386,5 +8386,6 @@
       "value": 1
     }
   ],
-  "camera_triggered_at": []
+  "camera_triggered_at": [],
+  "camera_trigger_mode": 0
 }

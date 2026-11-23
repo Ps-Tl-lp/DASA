@@ -3252,6 +3252,7 @@
     {"t_s": 87.896, "value": 1}
   ],
   "camera_triggered_at": [],
+  "camera_trigger_mode": 0,
   "missing_topics": ["camera_capture"],
   "sources": "log only",
   "time_zero_us": 66940000

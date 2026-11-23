@@ -229,6 +229,23 @@ The tolerance values in `px4.yaml` are decided. Requirements are chosen, and noi
 
 Every number in this table and in `px4.yaml`'s tolerance comments comes from one script, `reviews/2026-11-23/evidence.py` in the local prototype, over 28 complete flights.
 
+**Which flights are the baseline** (R8). Every flight below ran unmodified PX4 in Gazebo at 4x, with the 2 m acceptance radius in the plan. The runs are listed in `reviews/2026-11-23/evidence_inputs.txt` in the local prototype.
+
+| Mission and plan | Hold flown | fca3df865a | 6d1773f4c1 | Role |
+|---|---|---|---|---|
+| M01 fixture (`tests/fixtures/m01/mission.plan`: W1 50 m north, 20 m up) | 5 s, as the mission asks | 3 (R02, smoke S01, S02cam) | 3 (smoke D01, spike GZ01, GZ02) | Passing reference runs |
+| Generated M02, seed 7 (`mission_settings/simple.yaml`) | 5 s, as the mission asks | 5 | 3 | Passing reference runs |
+| The same M02, with the hold cut | 4 s | 2 | 3 | Stand-ins for a variant that cuts the hold; expected to fail the 5 s hold |
+| The same M02, with the hold cut | 2 s | 4 | 3 | The same |
+| Generated M01, seeds 1 and 2 | 5 s, as the mission asks | 2 | 0 | Passing reference runs |
+
+**Not in the baseline:**
+- **The two simple-mission logs in the tables above** (Gazebo and SIH). They were flown with PX4's default 10 m acceptance radius, before the plan carried 2 m, and SIH isn't the baseline simulator (`sim` in `px4.yaml`).
+- **The survey trace from `ulog-extract-demo`:** the same default radius.
+- **The earlier medium-style and survey flights with the 2 m radius:** their logs aren't in the input list.
+
+Medium and survey have no reference runs under these rules yet.
+
 **Time near W1.** W1 is at (50, 0, 20) and the plan tells PX4 to hold 5 s. The table gives the time spent near W1, measured two ways. For the single unbroken visit in each case, subtract the first inside timestamp from the next outside timestamp. This estimates the crossing times to sample resolution. The nominal interval is 0.02 s, with gaps up to 0.04 s in Gazebo.
 
 | Distance | Gazebo, 3D | SIH, 3D | Gazebo, horizontal + height within 0.8 m | SIH, horizontal + height within 0.8 m |

@@ -291,6 +291,7 @@ readings:
   disarm_reason:    { source: log, topic: vehicle_status, field: latest_disarming_reason } # not part of the state
   arming_state:     { source: log, topic: vehicle_status, field: arming_state } # not part of the state. 1 disarmed, 2 armed (msg/versioned/VehicleStatus.msg)
   camera_triggered_at: { source: log, topic: camera_capture, field: timestamp } # not part of the state. One value each time PX4 triggers the camera. No trigger, no topic in the log
+  camera_trigger_mode: { source: log, parameter: TRIG_MODE } # not part of the state. One value: the TRIG_MODE the log records (0 off, 1 on)
 time_zero_topics: [vehicle_local_position_groundtruth, vehicle_land_detected]
 
 # A run flown before the harness recorded Gazebo (its run.json has no `recording` key; the M01
@@ -308,6 +309,7 @@ log_only_readings:
   disarm_reason:    { source: log, topic: vehicle_status, field: latest_disarming_reason }
   arming_state:     { source: log, topic: vehicle_status, field: arming_state }
   camera_triggered_at: { source: log, topic: camera_capture, field: timestamp }
+  camera_trigger_mode: { source: log, parameter: TRIG_MODE }
 
 # The log's own ground truth, checked against the recording. PX4's gz_bridge reads the same
 # Gazebo topic, so in a correct run every log sample has a recorded sample at the same sim time
@@ -334,7 +336,10 @@ cross_check:
 # Every check runs and reports, whatever the others give, so the report lists every problem. A
 # run the harness marks inconclusive (an `assumed` precondition failed, or the flight didn't
 # finish) still lists every check, each INCONCLUSIVE with the harness's reason. A run with no
-# recording has no cross-check and is judged on its log alone.
+# `recording` key (flown before the harness recorded) has no cross-check and is judged on its
+# log alone; one that names a recording it doesn't have is INCONCLUSIVE.
+# A check is FAIL only on a violation seen in the log. One the log stopped too early to settle
+# is INCONCLUSIVE, so a flight cut short in the air is never FAIL for being cut short.
 
 # State properties that aren't read from the log.
 # The positions of the base and the waypoints are part of the mission and never change, so they
@@ -348,7 +353,10 @@ not_in_log:
 # Outcomes, for both: PASS when the readings agree with the goal's value. FAIL when they don't
 # and the log ends on the ground. INCONCLUSIVE when the goal wants true, the readings don't show
 # it yet and the log ends in the air, because it could still happen. A property already true in
-# the start state needs no task: PASS if the goal keeps it, FAIL if it doesn't.
+# the start state needs no task: PASS if the goal keeps it, FAIL if it doesn't. A goal waypoint
+# that doesn't list clicked_pic gets no clicked_pic check.
+# For clicked_pic only: if the goal wants a picture but camera_trigger_mode is 0 (the trigger was
+# off), the result is INCONCLUSIVE, because no capture could have been recorded.
 derived:
   waypoint.visited:
     reads: [agent.x, agent.y, agent.z]
@@ -358,7 +366,7 @@ derived:
   # means the trigger. A vehicle type with no camera flies with the trigger switched off, so
   # there it stays false.
   waypoint.clicked_pic:
-    reads: [camera_triggered_at, agent.x, agent.y, agent.z]
+    reads: [camera_triggered_at, camera_trigger_mode, agent.x, agent.y, agent.z]
     helper: at_waypoint
     rule: PX4 triggered the camera while the agent was at the waypoint
 
