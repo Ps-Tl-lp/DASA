@@ -16,20 +16,22 @@ A verifier should get both right.
 | File | Made by | Read by |
 |---|---|---|
 | `simple.yaml` | written by hand | generator |
-| `mission.yaml`, `start.xml`, `goal.xml` | generator | plan translator, verifier |
-| `mission.plan` | plan translator | harness |
+| `mission.yaml`, `start.xml`, `goal.xml` | generator | plan step, verifier |
+| `mission.plan` | plan step | harness |
 | `run.json` | harness | log reader |
 | `readings.json` | log reader | verifier |
 | `expected-verdict.json` | the answer the verifier should give | |
 
-Each run has its own `run.json`, `readings.json` and `expected-verdict.json`. Both use the same mission files. The file formats are a first guess. Change them if they don't work for you.
+Each run has its own `run.json`, `readings.json` and `expected-verdict.json`. Both use the same mission files.
+
+`readings.json` groups the config's readings. `position` is `agent.x`, `agent.y` and `agent.z`. `velocity` is `agent.velocity.x`, `.y` and `.z`. `landed` is `agent.landed`. The file formats are a first guess. Change them if they don't work for you.
 
 The zone and tolerances come from `platform_configs/px4.yaml`. R02's log (`R02.ulg`) is not in the repo, because raw logs stay out of git.
 
 ## How the verdicts were worked out
 
 - **Hold:** the time at W1 from the first reading inside the zone to the first reading outside it. The return climb counts. R02 is at W1 for 4.97 s before PX4 leaves mission mode for the return, and 6.11 s in all, so its PASS depends on that.
-- **`landed_at_base`:** the last readings are within 0.5 m of the base, landed, and slower than 0.1 m/s.
+- **`goal_check`:** the last readings match the goal state: within 0.5 m of the base, landed, and slower than 0.1 m/s.
 - **`visited`:** any reading inside the zone.
 
 ## Where the runs came from

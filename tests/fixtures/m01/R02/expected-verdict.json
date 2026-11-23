@@ -9,7 +9,7 @@
       "verdict": "PASS"
     },
     {
-      "check": "landed_at_base",
+      "check": "goal_check",
       "verdict": "PASS"
     },
     {
