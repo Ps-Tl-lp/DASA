@@ -160,6 +160,7 @@ def test_every_reading_names_its_source():
                 ways = {"field", "rate_of", "on_ground_m"} & set(row)
                 assert len(ways) == 1, (section, name)
     assert set(CONFIG["log_only_readings"]) == set(CONFIG["readings"])
+    assert {row["source"] for row in CONFIG["log_only_readings"].values()} == {"log"}
 
 
 def test_rate_of_names_a_reading():
@@ -180,7 +181,16 @@ def test_the_log_is_checked_against_the_recording():
     assert {"log", "same_time_within_s", "max_difference_m", "rule"} <= set(cross)
     assert lookup(CONFIG["cross_check"]["max_difference_m"]) > 0
     assert lookup(CONFIG["cross_check"]["same_time_within_s"]) > 0
-    assert CONFIG["cross_check"]["log"]["topic"] in CONFIG["time_zero_topics"]
+    log = CONFIG["cross_check"]["log"]
+    assert log["topic"] in CONFIG["time_zero_topics"]
+    # the same topic and fields the log-only position readings use
+    rows = CONFIG["log_only_readings"]
+    assert all(rows[f"agent.{a}"]["topic"] == log["topic"] for a in "xyz")
+    assert [rows[f"agent.{a}"]["field"] for a in "xyz"] == [
+        log["north"],
+        log["east"],
+        log["down"],
+    ]
     assert CONFIG["sim"]["pose_topic"].startswith(f"/world/{CONFIG['sim']['world']}/")
 
 

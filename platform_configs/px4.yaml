@@ -208,7 +208,9 @@ tasks:
 # item. doJumpId and Altitude differ from item to item, so they are $ values.
 plan_item_defaults: { type: SimpleItem, autoContinue: true, AltitudeMode: 1, AMSLAltAboveTerrain: null, doJumpId: $index, Altitude: $item_height }
 
-# Everything in the .plan file outside `items` is copied from this plan. The path is from the repo root.
+# Everything in the .plan file outside `items` is copied from this plan, except
+# plannedHomePosition, which the plan step writes from base_lat_lon (lat, lon, alt). The path is
+# from the repo root.
 plan_template: missions/simple.plan
 
 # Where the simulator starts the drone, as latitude and longitude. It is quick-setup's default
@@ -254,14 +256,19 @@ inputs:
 #   on_ground_m, still_below_m_s
 #                   landed at a reading: no higher than on_ground_m above where the drone
 #                   started, and its speed (from the three rate_of readings) below still_below_m_s
-#   subtract_first  subtract the first value, so positions are measured from the base
-#                   (where the drone sat before takeoff) instead of the simulator's origin
+#   subtract_first  subtract the first value inside the readings' span (the recording's sample
+#                   at the log's first ground-truth sample), so positions are measured from the
+#                   base (where the drone sat before takeoff) instead of the simulator's origin
 #   flip_sign       multiply by -1, because PX4's z points down and ours points up (log rows only)
 # The recording (run.json `recording`) is JSON lines written by the harness. A pose line is
 # {"k": "pose", "t": sim seconds, "p": [east, north, up]} for the vehicle: the first model on
 # sim.pose_topic whose name starts with sim.vehicle_model_prefix. A {"k": "pubs"} line lists the
-# topic's publishers. In SITL lockstep PX4's clock is the sim clock, so t * 1e6 is a log
-# timestamp, with no offset (2026-11-23 spike).
+# topic's publishers. An {"k": "info"} line carries the topic, the model found, or an `error`.
+# `recording` is a file name in the run folder. The harness starts the recorder before PX4
+# starts logging, so the recording covers every log sample; at 4x its samples are 0.068 s
+# apart, like the log's. In SITL lockstep PX4's clock is the sim clock, so t * 1e6 is a log
+# timestamp, with no offset (2026-11-23 spike): a recorded sample's reading time is
+# (t * 1e6 - time_zero_us) / 1e6 seconds.
 # Times are seconds from the earliest sample of time_zero_topics in the log, a missing topic
 # left out. The readings cover the log's own span (its first to last ground-truth sample), so a
 # log cut short gives readings cut short.
@@ -298,7 +305,7 @@ log_only_readings:
 # The log's own ground truth, checked against the recording. PX4's gz_bridge reads the same
 # Gazebo topic, so in a correct run every log sample has a recorded sample at the same sim time
 # with the same position (a Gazebo spike on 2026-11-23: 1403 of 1403 samples, within 2.1 um;
-# 5 flights with a full recording, within 5.3 um). Positions are compared in the world frame,
+# 5 flights with a full recording, within 5.2 um). Positions are compared in the world frame,
 # before subtract_first; down is the log's z, compared with the recording's up flipped.
 # A harness that records always names the recording in run.json, even if the recorder failed.
 # A run that names one whose file is missing, empty or shorter than the log is INCONCLUSIVE.
@@ -345,7 +352,7 @@ derived:
 # Each log holds one flight, so the last reading is the end of the flight.
 # not_in_log and derived give the properties that aren't readings.
 # A property the goal state doesn't list is not compared.
-# A log that is cut off before the disarm: disarmed_after_landing makes the run INCONCLUSIVE.
+# A log that is cut off before the disarm: disarmed_after_landing is INCONCLUSIVE for it.
 goal_check:
   use: last_reading
   within:
@@ -400,7 +407,7 @@ postconditions:
   # gets it. Touchdown is the first landed reading after the last airborne one; takeoff is the
   # first airborne reading in the log.
   # A disarm is a change of arming_state from armed to disarmed_state, and its reason is the
-  # disarm_reason at that change. PX4 keeps the last disarm reason while it is armed
+  # last disarm_reason at or before that change (PX4 writes both in the same message). PX4 keeps the last disarm reason while it is armed
   # (Commander.cpp at fca3df865a), so the reason alone can't show a re-arm or a second disarm.
   #   PASS          the last disarm is at or after touchdown with reason last_value, there is no
   #                 disarm between takeoff and touchdown, and the log ends disarmed
