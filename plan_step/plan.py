@@ -22,7 +22,7 @@ import yaml
 
 from .config import REPO_ROOT, follow, is_config_name, load_config
 from .geo import metres_to_lat_lon
-from .states import read_state, waypoint_ids
+from .states import StateError, read_state, waypoint_ids
 
 # The tasks this version can plan.
 SUPPORTED_TASKS = ("takeoff", "goto", "return_home")
@@ -66,24 +66,57 @@ class Mission:
 
     def __init__(self, folder):
         folder = Path(folder)
-        with open(folder / "mission.yaml") as f:
-            spec = yaml.safe_load(f)
+        try:
+            with open(folder / "mission.yaml") as f:
+                spec = yaml.safe_load(f)
+        except (OSError, yaml.YAMLError) as error:
+            raise PlanError(f"can't read mission.yaml: {error}") from error
+        if not isinstance(spec, dict):
+            raise PlanError("mission.yaml isn't a mapping of keys to values")
+        for key in ("mission_id", "start", "goal"):
+            if key not in spec:
+                raise PlanError(f"mission.yaml has no {key}")
         self.mission_id = spec["mission_id"]
-        self.start = read_state(folder / spec["start"])
-        self.goal = read_state(folder / spec["goal"])
-        # Each postcondition is one {name: {fields}} item.
+        try:
+            self.start = read_state(folder / spec["start"])
+            self.goal = read_state(folder / spec["goal"])
+        except StateError as error:
+            raise PlanError(str(error)) from error
         self.postconditions = [
-            next(iter(item.items())) for item in spec.get("postconditions", [])
+            _postcondition(p) for p in spec.get("postconditions") or []
         ]
         self.waypoints = waypoint_ids(self.start)
+        # Positions are metres from the base, so the base is the origin. A base anywhere
+        # else would mean subtracting it from every position, sideways and up.
+        base = tuple(self.start.get(f"base.{axis}") for axis in "xyz")
+        if base != (0, 0, 0):
+            raise PlanError(
+                "the base must be at 0, 0, 0, because positions are measured from it; "
+                f"it is at {base}"
+            )
 
     def holds(self):
         """{waypoint id: hold_at fields} for every hold_at postcondition."""
-        return {
-            fields["waypoint"]: fields
-            for name, fields in self.postconditions
-            if name == "hold_at"
-        }
+        holds = {}
+        for name, fields in self.postconditions:
+            if name == "hold_at":
+                if "waypoint" not in fields:
+                    raise PlanError("a hold_at has no waypoint")
+                holds[fields["waypoint"]] = fields
+        return holds
+
+
+def _postcondition(item):
+    """One postconditions entry as (name, fields): `- hold_at: {...}` or `- name`."""
+    if isinstance(item, str):
+        return item, {}
+    if isinstance(item, dict) and len(item) == 1:
+        name, fields = next(iter(item.items()))
+        fields = dict(fields or {})
+        if "waypoint" in fields:
+            fields["waypoint"] = str(fields["waypoint"])  # YAML reads `1` as a number
+        return name, fields
+    raise PlanError(f"postcondition {item!r} isn't one `name: {{fields}}` item")
 
 
 def build_plan(mission_folder, config=None):
@@ -109,9 +142,15 @@ def plan_text(plan):
 
 
 def plan_exists(mission_folder, config=None):
-    """The `plan_exists` helper: (True, "") if there is a plan, else (False, reason)."""
+    """The `plan_exists` helper: (True, "") if there is a plan, else (False, reason).
+
+    NotSupported is raised, not returned: "this version can't plan it yet" is not "the
+    drone can't do it", and the generator shouldn't move on to another vehicle type.
+    """
     try:
         build_plan(mission_folder, config)
+    except NotSupported:
+        raise
     except PlanError as error:
         return False, str(error)
     return True, ""
@@ -133,9 +172,6 @@ def choose_tasks(config, mission):
         for prop in mission.goal
         if _start_value(mission, prop) != mission.goal[prop]
     ]
-    if not changed:
-        return []  # nothing to do: no items at all, not even a takeoff
-
     for prop in changed:
         if prop.endswith(".clicked_pic"):
             raise NotSupported(
@@ -158,6 +194,13 @@ def choose_tasks(config, mission):
         for wp in mission.waypoints
         if f"waypoint.{wp}.visited" in changed or wp in holds
     ]
+    if not gotos:
+        if not changed:
+            return []  # nothing to do: no items at all, not even a takeoff
+        raise PlanError(
+            f"the goal changes {', '.join(changed)}, but no waypoint needs a goto, "
+            "so there is nothing to fly"
+        )
     tasks = [("takeoff", None), *gotos, ("return_home", None)]
     for name, _wp in tasks:
         if name not in config["tasks"]:
@@ -274,14 +317,16 @@ def _input(config, mission, tasks, index, dollar_name, item):
     if source == "postcondition":
         for name, fields in mission.postconditions:
             if name == row["name"] and fields.get("waypoint") == wp:
+                if row["field"] not in fields:
+                    raise PlanError(f"{name} for {wp} has no {row['field']}")
                 return fields[row["field"]]
         return row["default"]
 
     if source == "waypoint":
         helper = HELPERS[row["helper"]]
         home = config["base_lat_lon"]
-        north = mission.start[f"waypoint.{wp}.x"] - mission.start["base.x"]
-        east = mission.start[f"waypoint.{wp}.y"] - mission.start["base.y"]
+        north = mission.start[f"waypoint.{wp}.x"]  # metres from the base, the origin
+        east = mission.start[f"waypoint.{wp}.y"]
         results = dict(
             zip(
                 config["helpers"][row["helper"]]["returns"],

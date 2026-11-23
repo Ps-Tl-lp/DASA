@@ -7,7 +7,7 @@ import math
 
 # PX4's Earth radius (src/lib/geo/geo.h, CONSTANTS_RADIUS_OF_EARTH): PX4 treats the
 # Earth as this sphere, not the WGS84 ellipsoid. With it the formula below reproduces
-# our QGroundControl-made missions/simple.plan to the last digit.
+# the waypoint in our missions/simple.plan to the last digit.
 EARTH_RADIUS_M = 6371000.0
 
 
