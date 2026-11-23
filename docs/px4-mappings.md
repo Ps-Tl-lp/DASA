@@ -32,7 +32,7 @@ Docs: [VehicleLocalPosition](https://docs.px4.io/main/en/msg_docs/VehicleLocalPo
 - **Ground truth comes from the simulator.** A real vehicle lacks this simulator topic. PX4's estimated position is a different source of evidence.
 - **`landed` is now the simulator's, the disarm check is still PX4's own report.** `landed` is worked out from the recorded position: within `tolerances.landed.height_m` (0.1 m) of the start height and slower than `tolerances.landed.speed_m_s` (0.1 m/s). In 28 Gazebo flights the drone was within 0.001 m and 0.001 m/s while PX4 said landed. Touchdown that way comes 0.95 to 1.10 s before PX4's land detector says landed, and lift-off 2.70 to 2.82 s after PX4 says "not landed" (PX4 flips at arming, before the drone leaves the ground).
 - **A vehicle can be landed without ever flying.** In a never-armed log I had locally (`unkown_mission.ulg`, not a team file), `landed` stays true. If takeoff is required, check that the vehicle left the ground during this run.
-- **Time** is the message `timestamp` divided by 1,000,000: seconds since PX4 started.
+- **Time** in the log is the message `timestamp` divided by 1,000,000: seconds since PX4 started. Readings count from the earliest sample of `time_zero_topics` instead, and carry that sample's timestamp as `time_zero_us` (`tests/fixtures/m01/README.md`, File formats).
 
 **How the readings are made** (moved from `px4.yaml`'s comments on `readings` and `cross_check`):
 

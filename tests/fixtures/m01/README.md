@@ -24,9 +24,57 @@ A verifier should get both right.
 
 Each run has its own `run.json`, `readings.json` and `expected-verdict.json`. Both use the same mission files.
 
-`readings.json` groups the config's readings. `position` is `agent.x`, `agent.y` and `agent.z`. `velocity` is `agent.velocity.x`, `.y` and `.z`. `landed` is `agent.landed`. `nav_state` (PX4's flight mode; 3 is mission mode), `disarm_reason` and `arming_state` (1 disarmed, 2 armed) are the readings of those names. The file formats are a first guess. Change them if they don't work for you.
+`readings.json` groups the config's readings. `position` is `agent.x`, `agent.y` and `agent.z`. `velocity` is `agent.velocity.x`, `.y` and `.z`. `landed` is `agent.landed`. `nav_state` (PX4's flight mode; 3 is mission mode), `disarm_reason` and `arming_state` (1 disarmed, 2 armed) are the readings of those names. The formats are below.
 
 The zone and tolerances come from `platform_configs/px4.yaml`. R02's log (`R02.ulg`) is not in the repo, because raw logs stay out of git.
+
+## File formats
+
+Times are in seconds, positions in metres from the base (x north, y east, z up) and speeds in m/s. Lists of timed values are sorted by time. Later these sections become JSON Schema files, each with a `fileType` and an integer `version`, rejecting unknown keys and changing only by adding.
+
+**`mission.yaml`**
+- **`mission_id`:** a string.
+- **`start`, `goal`:** the file names of the two states, beside it.
+- **`postconditions`:** a list with one item per postcondition, in the form `platform_configs/px4.yaml` gives next to each check, for example `- hold_at: {waypoint: W1, min_s: 5}`. `disarmed_after_landing` isn't listed, because every mission gets it.
+- **Generated missions** also carry the settings and seed they came from.
+
+**`start.xml`, `goal.xml`:** every property of the base, the agent and each waypoint, with its type and unit. A waypoint that doesn't list `clicked_pic` counts as false.
+
+**`run.json`**
+- **Which run:** `mission_id`, `run_id`, and `plan` (the `.plan` file's path, from the run folder).
+- **`run_status`:** `completed` or `inconclusive`. An inconclusive run has a `reason` for it (`null` when completed):
+  - `can_arm` and `mission_starts`, the two `assumed` preconditions;
+  - `no_connection`, `upload_failed`, `no_takeoff` and `timeout` from the flyer;
+  - `sim_died`, `sim_setup`, `several_logs` and `no_log` from the harness.
+- **`source`:** `simulator`, `synthetic`, or what a copied run was made from.
+- **`log`:** the `.ulg` file's name, or `null`.
+- **`recording`:** the harness's Gazebo pose recording, or `null` or missing for a run read from the log alone.
+- **`record`** (optional): what the run was flown with, such as PX4 build, simulator, model, speed, parameters and seed.
+
+**`readings.json`**
+- **Copied from `run.json`:** `mission_id`, `run_id`, `run_status` and `reason`.
+- **The readings:**
+  - `position` and `velocity`: lists of `{t_s, x, y, z}`;
+  - `landed`, `nav_state` and `disarm_reason`: lists of `{t_s, value}`, with `landed` a boolean and the others integers;
+  - `camera_triggered_at`: a list of `{t_s}`.
+- **Rounding:** times to 3 decimals, positions and velocities to 4.
+- **Time origin:** times are seconds from the earliest sample of `time_zero_topics` in the log. `time_zero_us` is that sample's PX4 timestamp, in microseconds, so the log's own clock can be recovered.
+- **Written by the log reader:**
+  - `sources`: `"log only"`, or one entry per reading naming its source (`gz_pose` or `log`);
+  - `missing_topics`: log topics a reading needed but the log lacks. Those readings are empty lists;
+  - `cross_check`, for a recorded run: `{recording, compared, unmatched, over_limit, max_difference_m, publishers, verdict, reason}`.
+
+  R01, made up by hand, has none of these keys.
+
+**`expected-verdict.json`** (and the verifier's `verdict.json`)
+- **Top level:** `mission_id`, `run_id`, and `verdict` (PASS, FAIL or INCONCLUSIVE).
+- **`checks`:** one per check, in this order:
+  1. `visited` and `clicked_pic`, for each goal waypoint;
+  2. `goal_check`;
+  3. the mission's postconditions, in their order (`hold_at`, `visits_in_order`, `stays_in_geofence`);
+  4. `disarmed_after_landing`;
+  5. `evidence_cross_check`, for a recorded run.
+- **Each check has** `check`, `verdict` and a one-sentence `reason`. `waypoint`, `expected_s` and `observed_s` (2 decimals) appear where they apply.
 
 ## How the verdicts were worked out
 

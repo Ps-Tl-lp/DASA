@@ -6,11 +6,13 @@
     {
       "check": "visited",
       "waypoint": "W1",
-      "verdict": "PASS"
+      "verdict": "PASS",
+      "reason": "First at W1 at 12.00 s; the goal has visited true"
     },
     {
       "check": "goal_check",
-      "verdict": "PASS"
+      "verdict": "PASS",
+      "reason": "Ends 0.00 m from the goal's position, landed, at 0.00 m/s"
     },
     {
       "check": "hold_at",
