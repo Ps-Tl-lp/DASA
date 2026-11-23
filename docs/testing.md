@@ -64,7 +64,7 @@ This list is the one place open decisions are tracked. Until one is decided, cod
 - The never-lands rule: when a log that ends airborne counts as FAIL rather than INCONCLUSIVE.
 - The RTL timing rule.
 - What a gap in the log does to the hold check. `docs/px4-mappings.md` section 5 has a proposal.
-- When a log counts as a complete flight, and how the checks combine into one verdict for a run. A log cut off after landing reads as a normal end today (R5 wants INCONCLUSIVE).
+- How the checks combine into one verdict for a run. (When a log counts as a complete flight is decided: `disarmed_after_landing` in `platform_configs/px4.yaml`.)
 - Fixture format (trimmed `.ulg` or extracted traces) and how they're produced. Fixtures come with the "Validate the verifier" work.
 - The verifier's language and libraries, command line and report format ("Implement verifier" card).
 - Whether testers also stay out of the verifier's code, and who reviews verifier PRs.

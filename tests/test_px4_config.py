@@ -139,6 +139,12 @@ def test_hold_counts_in_mission_mode_with_a_named_allowance():
     assert 0 < lookup(hold["short_by_at_most"]) < 1
 
 
+def test_every_mission_flags_are_booleans():
+    for name, check in CONFIG["postconditions"].items():
+        assert isinstance(check.get("every_mission", False), bool), name
+    assert CONFIG["postconditions"]["disarmed_after_landing"]["every_mission"] is True
+
+
 def test_px4_gets_the_same_waypoint_zone_as_the_checks():
     # Sideways goes into each goto item, height into a PX4 setting.
     assert CONFIG["tasks"]["goto"]["plan_item"]["params"][1] == f"{ZONE}.within_m"
