@@ -23,7 +23,7 @@
     {
       "check": "disarmed_after_landing",
       "verdict": "PASS",
-      "reason": "Disarm reason changed to 6 at 87.392 s, 2.016 s after touchdown at 85.376 s"
+      "reason": "Disarmed with reason 6 at 87.392 s, 2.016 s after touchdown at 85.376 s, and still disarmed at the end"
     }
   ]
 }
