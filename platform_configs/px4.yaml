@@ -98,14 +98,18 @@ preconditions:
   global:
     allowed_values:
       agent.vehicle_type: [multicopter, multicopter_camera]
-      waypoint.z: { min: 5 } # PROPOSED. The lowest height we test. The lowest waypoint flown so far is 6 m.
+      waypoint.z: { min: 5 } # the lowest waypoint height: its zone then reaches down to 4.2 m. The lowest flown so far is 6 m.
     # How far out the generator is allowed to place a mission. Our own limit; PX4 and Gazebo
     # don't set one. It is a cylinder around the base.
     # A mission's geofence (in its settings) must fit inside it.
     # A mission with no geofence can put its points anywhere in it.
     flight_area:
-      max_distance_m: 200 # PROPOSED. Our survey plan reaches 170 m.
-      max_height_m: 50    # PROPOSED. Room for a geofence above the 30 m return climb, and for waypoints at 30 m.
+      # Our survey plan reaches 170 m. At 200 m the plan's sphere and Gazebo's WGS84 differ by at
+      # most about 0.6 m east-west (docs/px4-mappings.md section 5), inside at_waypoint.within_m.
+      max_distance_m: 200
+      # A geofence must clear the 30 m return climb plus geofence_clearance_m (32 m). 50 m leaves
+      # room for waypoints up to 48 m.
+      max_height_m: 50
 
   mission:
     # A visit or hold at one waypoint must not count for another.
@@ -231,7 +235,7 @@ base_lat_lon: { lat: 47.397971057728974, lon: 8.546163739800146, alt: 0 }
 #                  the helper's results (`returns` in `helpers`) this value is.
 #   item           the plan item being written
 inputs:
-  $height:      { from: first_goto, value: waypoint.z } # PROPOSED. Takeoff climbs to the first waypoint's height. Our three plans already do this.
+  $height:      { from: first_goto, value: waypoint.z } # takeoff climbs to the first waypoint's height, as all three of our plans do, so the first leg is level
   $hold_s:      { from: postcondition, name: hold_at, field: min_s, default: 0 }
   $wp_lat:      { from: waypoint, helper: metres_to_lat_lon, output: lat } # the .plan file wants latitude and longitude, not metres
   $wp_lon:      { from: waypoint, helper: metres_to_lat_lon, output: lon }
@@ -365,7 +369,7 @@ goal_check:
 # mission's values, not against what the plan file asked PX4 for. Each gives PASS, FAIL, or
 # INCONCLUSIVE when the log can't settle it.
 # Each entry's `mission.yaml:` comment is how a mission asks for it, as one item of its
-# postconditions list. PROPOSED, apart from hold_at, which is the M01 fixture's form. A check
+# postconditions list. The M01 fixture uses hold_at's. A check
 # with every_mission: true runs on every mission, listed or not.
 postconditions:
   # The same helper as the precondition of this name, run on the flown path with no clearance.
