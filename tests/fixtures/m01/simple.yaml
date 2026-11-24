@@ -1,0 +1,7 @@
+mission_id: M01
+waypoints: 1
+goal:
+  waypoint.visited: true
+  agent_ends: base_landed
+postconditions:
+  hold_at_each_waypoint: {min_s: 5}

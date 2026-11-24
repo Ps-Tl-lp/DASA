@@ -1,0 +1,29 @@
+{
+  "mission_id": "M01",
+  "run_id": "R01",
+  "verdict": "FAIL",
+  "checks": [
+    {
+      "check": "visited",
+      "waypoint": "W1",
+      "verdict": "PASS"
+    },
+    {
+      "check": "goal_check",
+      "verdict": "PASS"
+    },
+    {
+      "check": "hold_at",
+      "waypoint": "W1",
+      "verdict": "FAIL",
+      "expected_s": 5,
+      "observed_s": 2.55,
+      "reason": "Only visit in mission mode ended at 14.55 s after entering at 12.00 s"
+    },
+    {
+      "check": "disarmed_after_landing",
+      "verdict": "PASS",
+      "reason": "Disarmed with reason 6 at 26.00 s, 2.00 s after touchdown at 24.00 s, and still disarmed at the end"
+    }
+  ]
+}

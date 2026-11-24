@@ -17,6 +17,7 @@ An accepted ADR wins for what it decides (each ADR cites its source). Otherwise:
 | ulog-extract-demo | [dasa-capstone/ulog-extract-demo](https://github.com/dasa-capstone/ulog-extract-demo) | A proof of concept for reading `.ulg` logs, not the verifier. Only `extract/to_json.py` and the README's Gotchas matter. | dasa-capstone org members |
 | Shared Drive folder "DASA Capstone Files" | TODO(Gabriel): add link | Team files and class deliverables. Raw baseline `.ulg` logs will go here. | Team Google accounts |
 | Testing and CI research notes (Oct 22) | TODO(Gabriel): add link once uploaded to the shared Drive | Course requirements, tools, and open questions about testing the verifier. Background, not decisions. | Team Google accounts |
+| Prototype handoffs board | [FigJam](https://www.figma.com/board/lRr7L9nKwjKYXc6knDgeUw/HYDRA-%C2%B7-Prototype-handoffs) | The pipeline steps, who owns each, and what each hands to the next, using the `tests/fixtures/m01/` files as examples | TODO(Gabriel): confirm who can open it |
 | CS Capstone handbook | [capstone.alexulbrich.com](https://capstone.alexulbrich.com/) | Course expectations, such as Repo Checkpoints and the Testing Strategy guide | Public |
 | PX4 guide, v1.18 | [docs.px4.io/v1.18](https://docs.px4.io/v1.18/en/index.html) | PX4 docs for our version line. v1.18 isn't PX4's stable release yet, and the guide can differ from rc1 in details. | Public |
 

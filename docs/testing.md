@@ -17,7 +17,7 @@ To run part of the suite, give pytest a file (`pytest tests/test_missions.py`) o
 ## Layout
 
 - `tests/`: pytest tests in files named `test_*.py`. Name each test for the behavior it checks, such as `test_mission_ends_with_return_to_launch`.
-- `tests/fixtures/`: small sample data the tests use, committed to git (none yet). Each fixture comes with a note saying where it came from: PX4 commit, simulator, mission plan, and how it was trimmed. Raw `.ulg` files and run results stay out of git; `.gitignore` ignores `*.ulg` everywhere except `tests/fixtures/`.
+- `tests/fixtures/`: small sample data the tests use, committed to git (`m01/` so far; no test reads it yet). Each fixture comes with a note saying where it came from: PX4 commit, simulator, mission plan, and how it was trimmed. Raw `.ulg` files and run results stay out of git; `.gitignore` ignores `*.ulg` everywhere except `tests/fixtures/`.
 - `missions/`: the three mission plans. `tests/test_missions.py` checks each one against its written definition in [missions/README.md](../missions/README.md).
 - `platform_configs/`: the PX4 config. `tests/test_px4_config.py` checks that it loads, that it keeps to its own rules for how values are written (every name it points at exists, every `$` value and helper is listed, every check has a rule and uses readings it defines), and that its tasks and plan item fields match `missions/simple.plan`. It does not check whether the values are right.
 
@@ -66,7 +66,7 @@ This list is the one place open decisions are tracked. Until one is decided, cod
 - What a gap in the log does to the hold check. `docs/px4-mappings.md` section 5 has a proposal.
 - How to judge the evidence PX4 reports about itself (flight mode, disarm reason, camera trigger) when the autopilot is modified. Position, velocity and `landed` come from the harness's Gazebo recording and no longer depend on PX4, but in PX4's Docker image PX4 still starts Gazebo and runs beside the recorder (a follow-up: Gazebo in its own container).
 - How the checks combine into one verdict for a run. (When a log counts as a complete flight is decided: `disarmed_after_landing` in `platform_configs/px4.yaml`.)
-- Fixture format (trimmed `.ulg` or extracted traces) and how they're produced. Fixtures come with the "Validate the verifier" work.
+- Fixture format (trimmed `.ulg` or extracted traces) and how they're produced. Fixtures come with the "Validate the verifier" work. `tests/fixtures/m01/` is a first one, using extracted readings as JSON; its format is a first guess.
 - The verifier's language and libraries, command line and report format ("Implement verifier" card).
 - Whether testers also stay out of the verifier's code, and who reviews verifier PRs.
 - Which simulator the baseline runs use. The sample logs are Gazebo `x500`; quick-setup also runs SIH.

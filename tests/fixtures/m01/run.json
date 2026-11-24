@@ -1,0 +1,8 @@
+{
+  "mission_id": "M01",
+  "run_id": "R01",
+  "plan": "mission.plan",
+  "run_status": "completed",
+  "source": "synthetic",
+  "log": null
+}
