@@ -41,7 +41,7 @@ The top of `px4.yaml` lists how values are written. `tests/test_px4_config.py` c
 2. It checks the drawn mission (waypoint spacing, the geofence) and asks the plan step to build its plan. If anything fails, it draws again. The plan built for this check is the plan that gets flown.
 3. The plan step builds the task list in a fixed order (takeoff, a goto for each waypoint that changes, each picture straight after its goto, return home), checks it against the tasks' `needs` and `sets` from the start state to the goal state, and writes the `.plan` file. The two states can't show a hold or an order, so it reads both from the mission settings.
 4. The harness sets PX4 up (`px4_setup`), launches the vehicle type's `sim_model` in Gazebo, records Gazebo's pose of the vehicle (`sim.pose_topic`), flies the plan and saves the `.ulg` log.
-5. The log reader turns the recording and the log into `readings`, each sample with its time, and checks the log's ground truth against the recording (`cross_check`). That is all it does. It doesn't need the mission.
+5. The log reader turns the recording and the log into `readings`, each sample with its time, and checks the log's ground truth against the recording (`cross_check`). It also copies the PX4 build, simulator and simulation speed from `run.json` into `readings.json` for the verifier.
 6. The verifier does all the judging. It works out `visited` and `clicked_pic` from the readings and the mission's waypoints, compares the end of the flight with the goal state, and checks each of the mission's postconditions, using the values from the same settings file the plan step read: PASS, FAIL or INCONCLUSIVE.
 
 ## Related
