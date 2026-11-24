@@ -62,15 +62,36 @@ def read_state(path):
         root = ET.parse(path).getroot()
     except (OSError, ET.ParseError) as error:
         raise StateError(f"can't read {path.name}: {error}") from error
+    return _state(root, path.name)
+
+
+def read_state_xml(source, name):
+    """The same for a state held in memory: XML text, an Element or an ElementTree.
+
+    `name` is what the messages call it, such as start.xml.
+    """
+    if isinstance(source, ET.ElementTree):
+        source = source.getroot()
+    if isinstance(source, str):
+        try:
+            source = ET.fromstring(source)
+        except ET.ParseError as error:
+            raise StateError(f"can't read {name}: {error}") from error
+    if not isinstance(source, ET.Element):
+        raise StateError(f"{name} should be XML text or an XML element")
+    return _state(source, name)
+
+
+def _state(root, file_name):
     state = {}
     for thing in root:
         if thing.tag == "waypoint":
             if "id" not in thing.attrib:
-                raise StateError(f"{path.name}: a waypoint has no id")
+                raise StateError(f"{file_name}: a waypoint has no id")
             prefix = f"waypoint.{thing.attrib['id']}"
         else:  # base, agent: one of each
             prefix = thing.tag
-        _read_properties(thing, prefix, state, path.name)
+        _read_properties(thing, prefix, state, file_name)
     return state
 
 

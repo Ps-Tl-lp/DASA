@@ -28,7 +28,13 @@ import yaml
 
 from .config import REPO_ROOT, follow, is_config_name, load_config
 from .geo import metres_to_lat_lon
-from .states import StateError, missing_properties, read_state, waypoint_ids
+from .states import (
+    StateError,
+    missing_properties,
+    read_state,
+    read_state_xml,
+    waypoint_ids,
+)
 
 # Postconditions in the mission settings that the plan step understands.
 # hold_at_each_waypoint sets every goto's hold time. The plan step has nothing to do for
@@ -62,7 +68,16 @@ STATE_PREFIXES = ("agent.", "waypoint.", "base.")
 
 
 class PlanError(Exception):
-    """The mission has no plan. The message names the task and property that failed."""
+    """There is no plan. The message says why.
+
+    Raised as is, it means the input is wrong: a state or the settings that can't be
+    read, or that disagree. The two subclasses are the answers a caller acts on.
+    """
+
+
+class NoPlan(PlanError):
+    """The drone can't fly this mission: no task list meets every task's needs and
+    ends in the goal state. The message names the task and property that failed."""
 
 
 class NotSupported(PlanError):
@@ -70,18 +85,12 @@ class NotSupported(PlanError):
 
 
 class Mission:
-    """A mission folder: start.xml, goal.xml and the settings they were made from."""
+    """A mission: its start and goal states and what its settings ask for."""
 
-    def __init__(self, folder, settings=None):
-        folder = Path(folder)
-        settings = Path(settings) if settings is not None else settings_file(folder)
-        # What the settings ask for, as {name: fields}.
-        self.requested = _read_postconditions(settings)
-        try:
-            self.start = read_state(folder / START_FILE)
-            self.goal = read_state(folder / GOAL_FILE)
-        except StateError as error:
-            raise PlanError(str(error)) from error
+    def __init__(self, start, goal, requested):
+        """start, goal: states as {property: value}. requested: the settings'
+        postconditions as {name: fields}, already checked."""
+        self.start, self.goal, self.requested = start, goal, requested
         # A goal that leaves properties out would compare as reached on what is left,
         # so `<env/>` would look like a mission already done.
         for file_name, state in ((START_FILE, self.start), (GOAL_FILE, self.goal)):
@@ -120,6 +129,19 @@ class Mission:
                 f"it is at {base}"
             )
 
+    @classmethod
+    def from_folder(cls, folder, settings=None):
+        """A mission folder: start.xml, goal.xml and the settings they came from."""
+        folder = Path(folder)
+        settings = Path(settings) if settings is not None else settings_file(folder)
+        requested = _read_postconditions(settings)
+        try:
+            start = read_state(folder / START_FILE)
+            goal = read_state(folder / GOAL_FILE)
+        except StateError as error:
+            raise PlanError(str(error)) from error
+        return cls(start, goal, requested)
+
     def holds(self):
         """{waypoint id: hold_at fields} for every waypoint with a hold."""
         return {
@@ -143,19 +165,24 @@ def settings_file(folder):
 
 
 def _read_postconditions(path):
-    """The settings' postconditions as {name: fields}, after checking their shape."""
+    """The settings file's postconditions as {name: fields}, after checking them."""
     try:
         with open(path) as f:
             spec = yaml.safe_load(f)
     except (OSError, yaml.YAMLError) as error:
         raise PlanError(f"can't read the mission settings: {error}") from error
+    return _postconditions(spec, path.name)
+
+
+def _postconditions(spec, name):
+    """The same for settings already loaded. `name` is what the messages call them."""
     if not isinstance(spec, dict):
-        raise PlanError(f"{path.name} isn't a mapping of settings to values")
+        raise PlanError(f"{name} isn't a mapping of settings to values")
     requested = spec.get("postconditions") or {}
     if not isinstance(requested, dict):
         # A list is the older mission.yaml form, `- hold_at: {waypoint: W1, min_s: 5}`.
         raise PlanError(
-            f"{path.name}'s postconditions must be a mapping, such as "
+            f"{name}'s postconditions must be a mapping, such as "
             "`hold_at_each_waypoint: {min_s: 5}`, not a list or a single value"
         )
     checked = {}
@@ -189,12 +216,36 @@ def _check_hold(fields):
 
 
 def build_plan(mission_folder, config=None, *, settings=None):
-    """The whole .plan file for a mission, as a dict ready for json.dump.
+    """The whole .plan file for a mission folder, as a dict ready for json.dump.
 
     `settings` is the mission settings file; by default, the one in the folder.
     """
     config = config or load_config()
-    mission = Mission(mission_folder, settings)
+    return _plan(config, Mission.from_folder(mission_folder, settings))
+
+
+def plan_mission(start, goal, settings, config):
+    """The .plan for a mission held in memory: the generator's call.
+
+    start, goal: the two states, as XML text, Elements or ElementTrees (what the
+    generator writes to start.xml and goal.xml). settings: the mission settings as
+    loaded, such as yaml.safe_load of simple.yaml. config: px4.yaml as loaded. It is
+    required, so a caller never plans with a config other than its own.
+
+    Returns the plan, the dict plan_text writes: the plan that gets flown. Raises
+    NoPlan if the drone can't fly the mission, NotSupported if this version can't
+    plan it, and PlanError for input that can't be read or doesn't agree with itself.
+    """
+    try:
+        start_state = read_state_xml(start, START_FILE)
+        goal_state = read_state_xml(goal, GOAL_FILE)
+    except StateError as error:
+        raise PlanError(str(error)) from error
+    requested = _postconditions(settings, "the mission settings")
+    return _plan(config, Mission(start_state, goal_state, requested))
+
+
+def _plan(config, mission):
     tasks = choose_tasks(config, mission)
     check_tasks(config, mission, tasks)
     items = [_plan_item(config, mission, tasks, i) for i in range(len(tasks))]
@@ -220,10 +271,13 @@ def plan_text(plan):
 
 
 def plan_exists(mission_folder, config=None, *, settings=None):
-    """The `plan_exists` helper: (True, "") if there is a plan, else (False, reason).
+    """The `plan_exists` helper for a mission folder: (True, "") if there is a plan,
+    else (False, reason), whether the drone can't fly it or the files are wrong.
 
     NotSupported is raised, not returned: "this version can't plan it yet" is not "the
     drone can't do it", and the generator shouldn't move on to another vehicle type.
+    The generator holds its states in memory, so it calls plan_mission instead, which
+    also tells NoPlan apart from input written wrong.
     """
     try:
         build_plan(mission_folder, config, settings=settings)
@@ -272,7 +326,7 @@ def choose_tasks(config, mission):
     if not gotos:
         if not changed:
             return []  # nothing to do: no items at all, not even a takeoff
-        raise PlanError(
+        raise NoPlan(
             f"the goal changes {', '.join(changed)}, but no waypoint needs a goto, "
             "so there is nothing to fly"
         )
@@ -294,7 +348,7 @@ def _start_value(mission, prop):
 
 
 def check_tasks(config, mission, tasks):
-    """Walk the tasks from the start state; PlanError at the first step that fails."""
+    """Walk the tasks from the start state; NoPlan at the first step that fails."""
     state = dict(mission.start)
     for wp in mission.waypoints:
         state.setdefault(f"waypoint.{wp}.clicked_pic", False)
@@ -306,7 +360,7 @@ def check_tasks(config, mission, tasks):
             key = _scoped(prop, wp)
             want = _value(config, mission, tasks, index, wanted, state)
             if state.get(key) != want:
-                raise PlanError(
+                raise NoPlan(
                     f"{label} needs {key} = {want!r}, but it is {state.get(key)!r}"
                 )
         for prop, given in task.get("sets", {}).items():
@@ -318,7 +372,7 @@ def check_tasks(config, mission, tasks):
     for prop, want in mission.goal.items():
         have = state.get(prop, False if prop.endswith(".clicked_pic") else None)
         if have != want:
-            raise PlanError(
+            raise NoPlan(
                 f"after {last}, {prop} is {have!r}, but the goal wants {want!r}"
             )
 
