@@ -19,6 +19,7 @@ To run part of the suite, give pytest a file (`pytest tests/test_missions.py`) o
 - `tests/`: pytest tests in files named `test_*.py`. Name each test for the behavior it checks, such as `test_mission_ends_with_return_to_launch`.
 - `tests/fixtures/`: small sample data the tests use, committed to git (none yet). Each fixture comes with a note saying where it came from: PX4 commit, simulator, mission plan, and how it was trimmed. Raw `.ulg` files and run results stay out of git; `.gitignore` ignores `*.ulg` everywhere except `tests/fixtures/`.
 - `missions/`: the three mission plans. `tests/test_missions.py` checks each one against its written definition in [missions/README.md](../missions/README.md).
+- `platform_configs/`: the PX4 config. `tests/test_px4_config.py` checks that it loads, that it keeps to its own rules for how values are written (every name it points at exists, every `$` value and helper is listed, every check has a rule and uses readings it defines), and that its tasks and plan item fields match `missions/simple.plan`. It does not check whether the values are right.
 
 ## Rules
 
@@ -31,7 +32,7 @@ To run part of the suite, give pytest a file (`pytest tests/test_missions.py`) o
 - Before fixing a bug, write a test that reproduces it and fails. The fix makes it pass.
 - A flaky test passes and fails on the same code. Quarantine it the day it appears: skip it with `@pytest.mark.skip(reason="flaky: <issue link>")`, open an Issue, and find the cause before deleting anything, because some flaky tests are reporting a real bug. Run a new test several times in a row before merging it.
 - Never edit or delete a test to make it pass. If a test itself is wrong, say so in the PR and explain the change.
-- Test behavior at the boundaries: one case just inside and one just outside each tolerance. For time limits, mind the 0.1 s resolution of ground truth (below).
+- Test behavior at the boundaries: one case just inside and one just outside each tolerance. For time limits, mind how far apart ground-truth readings are: about 0.07 s at 4× (below).
 
 ## Known behaviors tests must account for
 
@@ -51,20 +52,26 @@ Log contents:
 - Timestamps are uint64 microseconds since boot. Some samples come before the log start, so cast to signed before subtracting.
 - Latitude and longitude need about 7 decimals. Three decimals is about 100 m.
 - Local frames are NED: z points down, so altitude is -z.
-- Ground truth is logged at about 10 Hz, so times measured from it have about 0.1 s resolution. Other topics log at other rates (EKF position about 125 Hz, `vehicle_status` about 2 Hz, `mission_result` only on change), so line them up by time, not by row.
+- Ground truth is logged about every 0.07 s of sim time at 4×, so times measured from it have that resolution. The logger asks for every 20 ms ([`logged_topics.cpp`](https://github.com/PX4/PX4-Autopilot/blob/fca3df865af36124a28c9d607e850f111dbaaea9/src/modules/logger/logged_topics.cpp#L249)) and gets fewer readings at 4×. Other topics log at other rates (EKF position about 125 Hz, `vehicle_status` about 2 Hz, `mission_result` only on change), so line them up by time, not by row.
 
 ## Not decided yet
 
 This list is the one place open decisions are tracked. Until one is decided, code or a test that depends on it gets a clearly marked placeholder (a comment starting `PLACEHOLDER:` that names the open decision), and the PR lists it. Don't pick a value or rule silently.
 
-- Tolerances (arrival radius, altitude band) and where they are defined.
+- Tolerance values, and where they are defined. ADR 0004 proposes `platform_configs/px4.yaml`, and every value marked `PROPOSED` there is still open.
+- How to show a picture was taken, not just that PX4 triggered the camera.
+- What evidence can show a collision. The log can't; the simulator's contact record can.
 - The never-lands rule: when a log that ends airborne counts as FAIL rather than INCONCLUSIVE.
 - The RTL timing rule.
-- The dwell window across the RTL switch.
+- What a gap in the log does to the hold check. `docs/px4-mappings.md` section 5 has a proposal.
+- How to judge the evidence PX4 reports about itself (flight mode, disarm reason, camera trigger) when the autopilot is modified. Position, velocity and `landed` come from the harness's Gazebo recording and no longer depend on PX4, but in PX4's Docker image PX4 still starts Gazebo and runs beside the recorder (a follow-up: Gazebo in its own container).
+- How the checks combine into one verdict for a run. (When a log counts as a complete flight is decided: `disarmed_after_landing` in `platform_configs/px4.yaml`.)
 - Fixture format (trimmed `.ulg` or extracted traces) and how they're produced. Fixtures come with the "Validate the verifier" work.
 - The verifier's language and libraries, command line and report format ("Implement verifier" card).
 - Whether testers also stay out of the verifier's code, and who reviews verifier PRs.
 - Which simulator the baseline runs use. The sample logs are Gazebo `x500`; quick-setup also runs SIH.
+- Whether a mission should test PX4's own geofence. It is off in every flight today (`px4_setup`), so a variant that breaks it would go unnoticed.
+- Where the shared helper functions live. `platform_configs/px4.yaml` lists them under `helpers`; none is written yet.
 - Whether CI on recorded logs meets the course's Research CI gate ([Repo Checkpoints](https://capstone.alexulbrich.com/assignments/repo-checkpoints/#what-ci-must-do)). To ask the TA.
 
 The verifier plan lays out options for the tolerances, RTL timing and never-lands questions, and lists some of them as questions for Manish. Record a decision that is expensive to reverse (tolerances, the report format, which simulator the baseline uses) in an ADR (`docs/adr/`); record smaller ones in the document that owns them. Either way, remove it from this list.

@@ -1,6 +1,6 @@
 # Missions
 
-QGroundControl plans for the three fixed missions. A plan holds the verifier's expected values: a flight log is checked against the plan that was flown. `tests/test_missions.py` checks each plan against its definition below, and checks that each plan's home is the simulator's default launch point (quick-setup's `PX4_HOME_LAT` and `PX4_HOME_LON`).
+QGroundControl plans for the three fixed missions. A plan is what PX4 is asked to fly. The verifier checks a flight against the mission's goal state and postconditions, not against the plan (`platform_configs/px4.yaml`). `tests/test_missions.py` checks each plan against its definition below, and checks that each plan's home is the simulator's default launch point (quick-setup's `PX4_HOME_LAT` and `PX4_HOME_LON`).
 
 | Plan | Definition |
 |---|---|
@@ -12,6 +12,6 @@ The definitions are from the Trello card [Run the simple, medium, and survey mis
 
 The files are copied unchanged from `samples/plans/` in `dasa-capstone/ulog-extract-demo` (private, org members) at commit `eb07982`. The team's sample flights of these plans were flown in `dasa-capstone/quick-setup` (private, org members) at PX4 `fca3df865a` (v1.18.0-rc1).
 
-`medium.plan` has a `plannedHomePosition` altitude of 491; `simple.plan` and `survey.plan` have 0. Every takeoff and waypoint item uses relative altitude (frame 3, metres above home), so the value doesn't change the mission. It is noted here, not changed.
+`medium.plan` has a `plannedHomePosition` altitude of 491; `simple.plan` and `survey.plan` have 0. Every takeoff and waypoint item uses relative altitude (frame 3, metres above home), so the value doesn't change the mission. It is noted here, not changed. 
 
-Editing a plan is ask-first, because it changes what the verifier checks flights against. If a definition changes, update the plan, this table and the test in the same PR.
+Editing a plan is ask-first, because it changes what PX4 is asked to fly. If a definition changes, update the plan, this table and the test in the same PR.

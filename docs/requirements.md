@@ -37,7 +37,7 @@ Status values: **Done** · **In progress** · **Not started** · **To confirm**.
 | 1 | Repository and board active; existing materials organized | The GitHub repo and Trello board are in use. Prithvi's code, docs, mission files, and references are in the repo. Setup problems are filed as GitHub issues. | Done (repo, board) · To confirm (materials, issues) |
 | 1 | Repo cleanup | The repo is private and named HYDRA. Each person has one account. No AI reviewers appear as contributors. Profiles are reviewed. | To confirm |
 | 1 | Baseline simulation reproducible | A teammate who didn't write the setup docs follows them and completes the simple mission on their own machine. | To confirm |
-| 2 | Three baseline missions reproducible | Simple, medium, and survey each run. For every run, the mission file, software versions, simulator settings, parameter snapshot, run ID, and flight log are preserved. A documented run procedure lets someone else repeat it. | To confirm |
+| 2 | Three baseline missions reproducible | Simple, medium, and survey each run. For every run, the mission file, software versions, simulator settings, parameter snapshot, run ID, flight log and simulator recording are preserved. A documented run procedure lets someone else repeat it. | To confirm |
 | 3 | First mission verifier | R1–R9 below pass, ending in an automated verification report for the three baseline missions. | In progress |
 | 4 | Red/Blue literature study | Each workstream presents 3–5 feasible options (Red: attack/failure categories; Blue: diversification strategies) and recommends a first experiment. | Not started |
 | 5 | Initial experimental target | A written Experiment 1 design names the component or behavior to diversify (not all of PX4), the first attack/failure scenario, the mission-success criteria, and the evidence to collect. GitHub issues are assigned. | Not started |
@@ -55,18 +55,18 @@ The current priority is the mission verifier. Per the Oct 30 decision, the high-
  
 | ID | Requirement | Acceptance criterion |
 |----|-------------|----------------------|
-| R1 | Every mission is represented as R = {precondition, start state, goal state, postcondition}, following the five-step verification approach. Each mission has one goal state. Start and goal states are full snapshots of the environment. Pre- and postconditions are specific to the mission. | Each team member can write one of the three baseline missions in this form, as in Manish's photo example. The written forms are in `docs/` and Manish has reviewed them. |
-| R2 | Mappings are explicit: every log parameter the verifier uses is mapped to the part of the goal state it gives evidence for, with a one-line reason. | A reader outside the team can trace every decision to the log fields it uses from the docs alone. No mapping exists only in code or in someone's head. |
+| R1 | Every mission is a start state and a goal state, with its postconditions, following the five-step verification approach. Each mission has one goal state. Start and goal states are full snapshots of the environment. Postconditions are specific to the mission. Preconditions come from the platform config and are applied when the mission is generated. | Each team member can write one of the three baseline missions in this form, as in Manish's photo example. The written forms are in `docs/` and Manish has reviewed them. |
+| R2 | Mappings are explicit: every log parameter or recorded value the verifier uses is mapped to the part of the goal state it gives evidence for, with a one-line reason. | A reader outside the team can trace every decision to the log fields it uses from the docs alone. No mapping exists only in code or in someone's head. |
  
 #### Verifier
  
 | ID | Requirement | Acceptance criterion |
 |----|-------------|----------------------|
 | R3 | The verifier works only with the general mission representation. Platform-specific details reach it through the mappings. | Decision code contains no ULog field names. Supporting a new platform means adding mappings, not changing decision code. |
-| R4 | The verifier maps log parameters to the goal state and decides whether the mission was accomplished (step 5). | For each of the three baseline missions, the report says whether the final state matched the goal state and whether the pre- and postconditions held. |
-| R5 | Every decision is PASS, FAIL, or INCONCLUSIVE, with a reason. Missing or invalid evidence gives INCONCLUSIVE, never PASS. | A truncated or corrupted log produces INCONCLUSIVE, not PASS. Every verdict includes a reason (e.g. "goal state not reached: no picture taken at b"). |
+| R4 | The verifier maps log parameters and recorded values to the goal state and decides whether the mission was accomplished (step 5). | For each of the three baseline missions, the report says whether the final state matched the goal state and whether the postconditions held. |
+| R5 | Every decision is PASS, FAIL, or INCONCLUSIVE, with a reason. Missing or invalid evidence gives INCONCLUSIVE, never PASS. | A truncated or corrupted log, or a log that disagrees with the simulator's recording, produces INCONCLUSIVE, not PASS. Every verdict includes a reason (e.g. "goal state not reached: no picture taken at b"). |
 | R6 | Mission-completion tolerances are chosen on runs of the unmodified autopilot, each with a reason. | No tolerance value is hard-coded in decision code. Each tolerance has a reason and names the reference runs it was tuned on. |
-| R7 | The verifier runs on logs after the flight and does not stop at the first failure. | A run that fails partway still produces a full report. |
+| R7 | The verifier runs on logs and recordings after the flight and does not stop at the first failure. | A run that fails partway still produces a full report. |
 | R8 | A mission only counts if the unmodified autopilot passes it on reference runs. | Each mission in the suite has recorded passing reference runs of the baseline; any that fail are listed as excluded with a reason. |
 | R9 | The verifier is validated by people who did not build it. | The validation report is written by teammates other than the verifier's authors. |
  
@@ -86,7 +86,7 @@ Source: project doc §2 and §8; [ADR 0001](adr/0001-dev-environment.md).
 **Platform**
 - PX4 is the primary platform, run as software-in-the-loop (SITL) simulation (§2).
 - The development environment follows [ADR 0001](adr/0001-dev-environment.md) and is set up with [quick setup](https://github.com/dasa-capstone/quick-setup). Like the ADR, this leaves the simulator and airframe open.
-- Execution evidence is the PX4 flight log (`.ulg`) (§6).
+- Execution evidence is the PX4 flight log (`.ulg`) and the harness's recording of the simulator's pose of the vehicle, made outside PX4 (§6). Position, velocity and landed come from the recording, and the log's own copy is cross-checked against it. The flight mode, arming state, disarm reason and camera trigger come from the log. (Changed 2026-11-23 with the PX4 config's call 3, for the team to approve: a modified autopilot could change its own log.)
 - PX4 is an evaluation platform only. The verifier design and variant generation must stay general and not depend on PX4 (Oct 13, Oct 30).
 **Safety and scope**
 - All attack and failure experiments stay inside the project simulation/test environment (§4).

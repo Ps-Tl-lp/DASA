@@ -39,9 +39,9 @@ Flying missions needs PX4: see ADR 0001 (quick-setup), `docs/adr/0001-dev-enviro
 
 ## Conventions
 
-- Layout: `missions/`, `tests/`, and `docs/` exist. Planned: `verifier/`, `diversification/`, `attacks/`, `experiments/`, `scripts/`, `results/`.
+- Layout: `missions/`, `tests/`, `docs/` and `platform_configs/` exist. Planned: `verifier/`, `diversification/`, `attacks/`, `experiments/`, `scripts/`, `results/`.
 - The verifier returns PASS only with adequate evidence of satisfaction, FAIL only with adequate evidence of a violation, and INCONCLUSIVE when evidence is missing or invalid. It never passes by default. Every check runs, with no early bail-out (ADR 0002).
-- Tolerances and units are never hard-coded in check logic; where they are defined is not decided.
+- Tolerances and units are never hard-coded in check logic. ADR 0004 proposes defining them in `platform_configs/px4.yaml`. Values marked `PROPOSED` there are not decided.
 - Seed all randomness. Every experiment writes a run record: commit, PX4 version, simulator and airframe, parameters, mission, seed, and the model and prompt for generated variants.
 - Small test fixtures go in `tests/fixtures/`. Raw flight logs and run output stay out of git.
 - The people testing the verifier are not the people building it (ADR 0003). Expected values in tests never come from the verifier's own output (`docs/testing.md`).
