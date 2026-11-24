@@ -57,6 +57,7 @@ The environment file on the `env-rep` branch (`docs/environment/environment_repr
 
 **`readings.json`**
 - **Copied from `run.json`:** `mission_id`, `run_id`, `run_status`, and `reason` when the run has one.
+- **Flight setup:** Copy `record.px4_commit`, `record.simulator` and `record.speed` from `run.json` into a `record` object. Keep the values as recorded. If a field is missing, leave it out. Omit `record` when none of the three are available, as in the synthetic R01 fixture. The verifier can use these fields to identify which setup flew the mission (ADR 0005).
 - **The readings:**
   - `position` and `velocity`: lists of `{t_s, x, y, z}`;
   - `landed`, `nav_state`, `disarm_reason` and `arming_state`: lists of `{t_s, value}`, with `landed` a boolean and the others integers;
