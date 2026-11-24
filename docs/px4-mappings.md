@@ -81,7 +81,7 @@ Docs: [VehicleStatus](https://docs.px4.io/main/en/msg_docs/VehicleStatus.html), 
 - **Collision or crash.** The four signs are the disarm reason, failure-detector flags, freefall, and final ground-truth tilt. In a separate local test run of mine (`contact2_1`), Gazebo recorded a rotor touching a box at 34.9 s. That flight's log still shows a landing disarm, clear flags, no freefall and 0° final tilt. So the four signs cannot clear a flight of a collision. The simulator's own contact record can show one. The two demo flights ended at 0.0° and 2.7°. The pinned build has `fd_roll` and `fd_pitch`. The [current message](https://docs.px4.io/main/en/msg_docs/FailureDetectorStatus.html) lists `fd_tilt`.
 - **Battery: read the lowest value, not the last.** PX4 reserves −1 for an invalid fraction. Missing coverage cannot clear a battery limit. The reported fraction recovers after disarming, to 0.80 and 0.78 by the end of the logs. See also the 50% floor in section 3.
 - **Time and battery limits are not demo postconditions.** The mappings are here because they were cheap to check. The limits themselves would be written with the postconditions.
-- **The required hold comes from the mission's postconditions,** which the generator fills in from the mission settings. The plan step reads it to write `goto`'s hold. The verifier checks against the mission's number, not the plan's (5 s for the simple mission).
+- **The required hold comes from the mission settings.** In M01, `hold_at_each_waypoint: {min_s: 5}` asks for five seconds at every waypoint. The plan step reads it to write `goto`'s hold. The verifier checks against the mission's number, not the plan's (5 s for the simple mission).
 
 ### Outcomes of each check
 
@@ -161,7 +161,7 @@ Result: `takeoff`, `goto W1`, `return_home`. Those are the three items in our `s
 
 - **Why compare the states instead of just visiting every waypoint.** For our current missions both give the same plan. The difference shows up with anything else: a waypoint with `clicked_pic` false in both states gets a `goto` (its `visited` changed) but no `take_picture`. One rule covers every task.
 - **The difference alone isn't enough.** Takeoff and return leave no net change between start and goal. They come from `needs` and from where the goal state puts the agent.
-- Takeoff height is proposed as the height of the first waypoint the plan flies to (`$height` in `inputs`). Our three plans already do that (20, 20 and 30 m). Hold time (`$hold_s`) and waypoint order come from the mission's postconditions, which the plan step reads along with the two states. With no order asked for, it uses waypoint id order.
+- Takeoff height is proposed as the height of the first waypoint the plan flies to (`$height` in `inputs`). Our three plans already do that (20, 20 and 30 m). Hold time (`$hold_s`) and waypoint order come from the mission's postconditions, which the plan step reads from the settings file alongside the two states. With no order asked for, it uses waypoint id order.
 
 The medium mission adds an order requirement. Its fourth waypoint has the same coordinates and altitude as the takeoff item. Checking each waypoint's first visit could put W4 first on a correct run. Look for a qualifying W4 visit after W3. Flown in a local spike of mine (three flights, 2 m radius): "a visit to each waypoint after the previous one's visit" passed two correct flights and failed one flown in the wrong order. First-visit order failed the two correct flights.
 
