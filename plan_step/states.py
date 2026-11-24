@@ -7,14 +7,25 @@ platform_configs/px4.yaml names them, with the waypoint's id added after `waypoi
 
 # The state files are ours (the generator writes them). The standard library's parser
 # doesn't fetch external entities, so it is safe for them without another dependency.
+import math
 import xml.etree.ElementTree as ET
 
 _BOOLS = {"true": True, "false": False, "1": True, "0": False}
 
+
+def _finite_float(text):
+    value = float(text)
+    if not math.isfinite(value):
+        # inf and nan read as floats, but no position or speed can be either, and the
+        # .plan file would hold JSON that isn't valid.
+        raise ValueError(f"{text!r} isn't a finite number")
+    return value
+
+
 # The XML `type` attribute says how to read `value`.
 _READERS = {
-    "float": float,
-    "double": float,
+    "float": _finite_float,
+    "double": _finite_float,
     "int": int,
     "string": str,
     "bool": lambda text: _BOOLS[text.strip().lower()],
@@ -23,6 +34,26 @@ _READERS = {
 
 class StateError(ValueError):
     """A state file we can't read. The message says which file and property."""
+
+
+# What every state file lists, start and goal alike (tests/fixtures/m01/README.md). A
+# waypoint's clicked_pic may be left out: it then counts as false.
+REQUIRED = (
+    "base.x",
+    "base.y",
+    "base.z",
+    "agent.x",
+    "agent.y",
+    "agent.z",
+    "agent.velocity.x",
+    "agent.velocity.y",
+    "agent.velocity.z",
+    "agent.landed",
+    "agent.vehicle_type",
+    "agent.has_camera",
+    "agent.has_grippers",
+)
+REQUIRED_PER_WAYPOINT = ("x", "y", "z", "visited")
 
 
 def read_state(path):
@@ -58,9 +89,18 @@ def _read_properties(element, prefix, state, file_name):
         try:
             state[name] = _READERS[kind](text)
         except (KeyError, ValueError) as error:
+            what = "finite number" if _READERS[kind] is _finite_float else kind
             raise StateError(
-                f"{file_name}: {name} = {text!r} isn't a {kind}"
+                f"{file_name}: {name} = {text!r} isn't a {what}"
             ) from error
+
+
+def missing_properties(state):
+    """The properties every state lists that this one leaves out, in REQUIRED order."""
+    names = list(REQUIRED)
+    for wp in waypoint_ids(state):
+        names += [f"waypoint.{wp}.{prop}" for prop in REQUIRED_PER_WAYPOINT]
+    return [name for name in names if name not in state]
 
 
 def waypoint_ids(state):

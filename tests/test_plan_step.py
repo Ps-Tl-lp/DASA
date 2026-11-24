@@ -5,6 +5,7 @@ missions/simple.plan, the config itself, and a great-circle distance worked out
 independently below.
 """
 
+import copy
 import json
 import math
 from pathlib import Path
@@ -527,3 +528,79 @@ def test_a_missing_state_file_has_no_plan_and_names_it(tmp_path):
     (folder / "goal.xml").unlink()
     ok, reason = plan_exists(folder, CONFIG)
     assert not ok and "goal.xml" in reason
+
+
+# ---- States that leave a property out, or hold a number that isn't finite ------------
+
+WP_Z = '    <z type="float" unit="m" value="20"/>\n'
+
+
+@pytest.mark.parametrize("postconditions", [None, _hold(5)])
+def test_an_empty_goal_has_no_plan_but_a_goal_already_met_plans_nothing(
+    tmp_path, postconditions
+):
+    # A complete goal that changes nothing still gives a plan with no items. A goal
+    # file that lists nothing is incomplete, not a mission that is already done.
+    met = _mission(tmp_path / "met", {"W1": (40, 0, 20)}, goal_visited={"W1": False})
+    assert plan_exists(met, CONFIG) == (True, "")
+    assert _items(met) == []
+    empty = _mission(tmp_path / "empty", {"W1": (40, 0, 20)}, postconditions)
+    (empty / "goal.xml").write_text("<env/>\n")
+    ok, reason = plan_exists(empty, CONFIG)
+    assert not ok and "goal.xml" in reason and "base.x" in reason
+
+
+@pytest.mark.parametrize(
+    "line, named",
+    [
+        (WP_Z, "waypoint.W1.z"),
+        ('    <visited type="bool" value="false"/>\n', "waypoint.W1.visited"),
+        ('    <landed type="bool" value="true"/>\n', "agent.landed"),
+        ('    <has_camera type="bool" value="false"/>\n', "agent.has_camera"),
+    ],
+)
+def test_a_state_missing_a_property_has_no_plan_and_names_it(tmp_path, line, named):
+    folder = _mission(tmp_path, {"W1": (40, 0, 20)})
+    start = (folder / "start.xml").read_text()
+    assert line in start
+    (folder / "start.xml").write_text(start.replace(line, "", 1))
+    ok, reason = plan_exists(folder, CONFIG)
+    assert not ok and "start.xml" in reason and named in reason
+
+
+def test_command_line_says_which_coordinate_is_missing(tmp_path, capsys):
+    folder = _mission(tmp_path, {"W1": (40, 0, 20)})
+    start = (folder / "start.xml").read_text()
+    (folder / "start.xml").write_text(start.replace(WP_Z, ""))
+    assert main([str(folder), "--out", str(tmp_path / "x.plan")]) == 1
+    err = capsys.readouterr().err
+    assert "no plan:" in err and "waypoint.W1.z" in err
+
+
+def test_start_and_goal_with_different_waypoints_have_no_plan(tmp_path):
+    folder = _mission(tmp_path / "two", {"W1": (40, 0, 20), "W2": (0, 40, 20)})
+    one = _mission(tmp_path / "one", {"W1": (40, 0, 20)})
+    (folder / "goal.xml").write_text((one / "goal.xml").read_text())
+    ok, reason = plan_exists(folder, CONFIG)
+    assert not ok and "W2" in reason
+
+
+@pytest.mark.parametrize("value", ["inf", "-inf", "nan", "Infinity"])
+def test_a_coordinate_that_isnt_finite_has_no_plan(tmp_path, value):
+    folder = _mission(tmp_path, {"W1": (40, 0, 20)})
+    for name in ("start.xml", "goal.xml"):
+        text = (folder / name).read_text()
+        assert 'value="40"' in text
+        (folder / name).write_text(text.replace('value="40"', f'value="{value}"'))
+    ok, reason = plan_exists(folder, CONFIG)
+    assert not ok and "W1.x" in reason and "finite" in reason
+
+
+def test_a_plan_holding_a_number_that_isnt_finite_is_refused(tmp_path):
+    config = copy.deepcopy(CONFIG)
+    config["base_lat_lon"]["alt"] = math.inf
+    folder = _mission(tmp_path, {"W1": (40, 0, 20)})
+    ok, reason = plan_exists(folder, config)
+    assert not ok and "finite" in reason
+    with pytest.raises(ValueError):
+        plan_text({"mission": {"plannedHomePosition": [0, 0, math.inf]}})
