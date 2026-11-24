@@ -43,7 +43,7 @@ class Recording:
         last = max(
             (n for n, line in enumerate(lines, start=1) if line.strip()), default=0
         )
-        seen = set()
+        seen = {}  # timestamp_us -> the pose first recorded at that sim instant
         for number, line in enumerate(lines, start=1):  # numbered as in the file
             if not line.strip():
                 continue
@@ -64,8 +64,16 @@ class Recording:
                     self.problem = f"line {number} of {path.name} isn't a usable pose"
                     return
                 if sample[0] in seen:
-                    continue  # the same sim instant twice: keep the first
-                seen.add(sample[0])
+                    if seen[sample[0]] != sample[1:]:
+                        # One model can't be in two places at one sim instant: a
+                        # second publisher, or a recording that was edited.
+                        self.problem = (
+                            f"line {number} of {path.name} gives a second, different "
+                            f"pose at t = {entry['t']} s"
+                        )
+                        return
+                    continue  # the same pose at the same sim instant again: keep one
+                seen[sample[0]] = sample[1:]
                 self.samples.append(sample)
             elif kind == "pubs":
                 if not self._publishers(entry.get("pubs") or []):

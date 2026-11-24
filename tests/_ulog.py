@@ -17,12 +17,14 @@ def _message(kind, payload):
     return struct.pack("<HB", len(payload), ord(kind)) + payload
 
 
-def write_ulog(path, topics, parameters=None):
+def write_ulog(path, topics, parameters=None, damaged=False):
     """Write a .ulg file.
 
     topics: {name: (fields, rows)}. fields is [(ulog type, field name), ...], starting
     with ("uint64_t", "timestamp"); rows is a list of tuples in that order.
     parameters: {name: int or float} (written as int32_t or float).
+    damaged: put a message of size 0 and type 0 before the last sample. pyulog
+    reports that as file corruption and skips ahead, so the last sample is lost.
     """
     out = bytearray(b"ULog\x01\x12\x35" + bytes([1]) + struct.pack("<Q", 0))
     out += _message("B", bytes(16) + struct.pack("<QQQ", 0, 0, 0))
@@ -42,7 +44,10 @@ def write_ulog(path, topics, parameters=None):
     for msg_id, (fields, rows) in enumerate(topics.values()):
         layout = "<" + "".join(_PACK[t] for t, _ in fields)
         samples += [(row[0], msg_id, struct.pack(layout, *row)) for row in rows]
-    for _t, msg_id, payload in sorted(samples, key=lambda s: (s[0], s[1])):
+    ordered = sorted(samples, key=lambda s: (s[0], s[1]))
+    for index, (_t, msg_id, payload) in enumerate(ordered):
+        if damaged and index == len(ordered) - 1:
+            out += struct.pack("<HB", 0, 0)
         out += _message("D", struct.pack("<H", msg_id) + payload)
     path.write_bytes(bytes(out))
     return path

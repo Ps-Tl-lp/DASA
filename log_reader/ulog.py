@@ -28,7 +28,12 @@ class Log:
                 self.types[(data.name, field.field_name)] = field.type_str
         # Parameters as they were when logging started.
         self.parameters = dict(ulog.initial_parameters)
-        self.corrupt = ulog.file_corruption
+        # pyulog skips what it can't parse and only flags it. What is left can still
+        # look like a good flight, so the reader says so (R5: a corrupted log is
+        # INCONCLUSIVE).
+        self.problem = None
+        if ulog.file_corruption:
+            self.problem = "the log is damaged: pyulog skipped data it couldn't read"
 
     def has(self, topic):
         return topic in self.columns

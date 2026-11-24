@@ -37,7 +37,14 @@ STATUS = [
 ]
 
 
-def _run(folder, log_topics, recording_lines=None, parameters=None, **run_extra):
+def _run(
+    folder,
+    log_topics,
+    recording_lines=None,
+    parameters=None,
+    damaged=False,
+    **run_extra,
+):
     """Write run.json, run.ulg and (if given) gz_pose.jsonl into folder.
 
     recording_lines: a list of JSON objects, raw text, or "absent" (named, not written).
@@ -47,6 +54,7 @@ def _run(folder, log_topics, recording_lines=None, parameters=None, **run_extra)
         folder / "run.ulg",
         log_topics,
         {"TRIG_MODE": 0} if parameters is None else parameters,
+        damaged,
     )
     run = {
         "mission_id": "T",
@@ -402,7 +410,7 @@ def test_a_recording_that_starts_after_the_log_gives_no_positions(tmp_path):
 
 def test_recording_lines_out_of_order_or_repeated_read_the_same(tmp_path):
     shuffled = [POSES[3], POSES[0], POSES[5], POSES[1], POSES[4], POSES[2]]
-    repeat = (2.1, [9.0, 9.0, 9.0])  # the same sim time again, later in the file
+    repeat = POSES[2]  # the same sim time and pose again, later in the file
     ordered = read_run(_run(tmp_path / "a", _recorded_topics(), _recording()))
     jumbled = read_run(
         _run(tmp_path / "b", _recorded_topics(), _recording([*shuffled, repeat]))
@@ -480,3 +488,37 @@ def test_a_publisher_line_that_isnt_a_list_of_pairs_is_inconclusive(tmp_path):
         "cross_check"
     ]
     assert check["verdict"] == "INCONCLUSIVE" and "publisher list" in check["reason"]
+
+
+# ---- A damaged log, and a recording with two poses at once ---------------------------
+
+
+def test_a_damaged_log_is_reported_and_its_cross_check_is_inconclusive(tmp_path):
+    clean = read_run(_run(tmp_path / "clean", _recorded_topics(), _recording()))
+    damaged = read_run(
+        _run(tmp_path / "damaged", _recorded_topics(), _recording(), damaged=True)
+    )
+    assert "log_problem" not in clean
+    assert clean["cross_check"]["verdict"] == "PASS"
+    # pyulog skips the damaged part. What is left still agrees with the recording, so
+    # only the reader's report shows the damage (R5: a corrupted log is INCONCLUSIVE).
+    assert "damaged" in damaged["log_problem"]
+    check = damaged["cross_check"]
+    assert check["verdict"] == "INCONCLUSIVE" and "damaged" in check["reason"]
+    assert (check["compared"], check["unmatched"], check["over_limit"]) == (3, 0, 0)
+
+
+def test_a_damaged_log_only_run_is_reported(tmp_path):
+    readings = read_run(_run(tmp_path, LOG_ONLY_TOPICS, damaged=True))
+    assert "damaged" in readings["log_problem"]
+    assert "cross_check" not in readings
+
+
+def test_two_different_poses_at_one_time_are_inconclusive(tmp_path):
+    second = (2.1, [1.0, 4.0, 0.5])  # 1 m further north, at a time already recorded
+    readings = read_run(
+        _run(tmp_path, _recorded_topics(), _recording([*POSES, second]))
+    )
+    check = readings["cross_check"]
+    assert check["verdict"] == "INCONCLUSIVE" and "2.1" in check["reason"]
+    assert readings["position"] == []
