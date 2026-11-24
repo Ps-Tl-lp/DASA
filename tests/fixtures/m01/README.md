@@ -63,18 +63,17 @@ The environment file on the `env-rep` branch (`docs/environment/environment_repr
   - `landed`, `nav_state`, `disarm_reason` and `arming_state`: lists of `{t_s, value}`, with `landed` a boolean and the others integers;
   - `camera_triggered_at`: a list of `{t_s}`;
   - `camera_trigger_mode`: one value, the `TRIG_MODE` the log records (0 off, 1 on).
-- **Rounding:** times to 3 decimals, positions and velocities to 4. A value the log or recording stored as NaN (not a number) is written as `null`, because JSON has no NaN.
+- **Rounding:** times to 3 decimals, positions and velocities to 4.
 - **Time origin:** times are seconds from the earliest sample of `time_zero_topics` in the log. `time_zero_us` is that sample's PX4 timestamp, in microseconds, so the log's own clock can be recovered.
 - **Written by the log reader:**
   - `sources`: the string `"log only"` for a run read from the log alone, or an object with one entry per reading naming its source (`gz_pose` or `log`). A schema has to allow both;
-  - `log_problem`, only when pyulog reports damaged data in the log: a sentence saying so. pyulog skips what it can't read, so the readings that are left can look complete. The run is INCONCLUSIVE (R5), and a recorded run's `cross_check` is INCONCLUSIVE too. Left out when the log reads cleanly, as in R01 and R02;
   - `missing_topics`: log topics a reading needed but the log lacks. Those readings are empty lists;
   - `cross_check`, for a recorded run: `{recording, compared, unmatched, over_limit, max_difference_m, publishers, verdict, reason}`.
 
   R01, made up by hand, has none of these keys, and no `time_zero_us` (it has no log). R01 and R02 are both log-only runs, so their velocity and `landed` stand for the log's own values: PX4's ground-truth velocity and land detector, not `rate_of` and the position rule.
 
 **`gz_pose.jsonl`** (the harness's Gazebo recording, named in `run.json`'s `recording`): one JSON object per line, as `docs/px4-mappings.md` section 1 describes.
-- **Pose:** `{"k": "pose", "t": <sim seconds>, "p": [east, north, up]}` for the vehicle model. A pose repeated at the same `t` is read once. Two different poses at the same `t` make the recording unusable, and the cross-check INCONCLUSIVE.
+- **Pose:** `{"k": "pose", "t": <sim seconds>, "p": [east, north, up]}` for the vehicle model.
 - **Publishers:** `{"k": "pubs", "pubs": [[address, type], ...]}` lists the pose topic's publishers.
 - **Recorder notes:** `{"k": "info", ...}`, including any `error`.
 - **Clock:** `t` × 10⁶ is the log's timestamp, with no offset.

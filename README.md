@@ -48,7 +48,6 @@ The checks above don't need PX4. Flying the missions in `missions/` does. PX4 is
 | [`tests/`](tests/) | pytest tests; today they check the mission plans against their written definitions, that the PX4 config hangs together, and that the plan step writes M01's `mission.plan`. `tests/fixtures/` holds small test fixtures |
 | [`platform_configs/`](platform_configs/) | One config file per platform. `px4.yaml` has the preconditions, task mappings, log readings and tolerances for PX4 |
 | [`docs/`](docs/) | Requirements, design, risks, decisions (`docs/adr/`), testing, definitions, the PX4 mappings, and sources outside the repo |
-| [`log_reader/`](log_reader/) | The log reader: turns a run's PX4 `.ulg` log and Gazebo recording into `readings.json` (`python -m log_reader RUN_FOLDER`) |
 | [`.github/`](.github/) | The CI workflow, the PR template, and Copilot review instructions |
 | `pyproject.toml`, `requirements-dev.txt` | Tool settings and pinned dev dependencies |
 | `verifier/` (planned) | The mission verifier |
