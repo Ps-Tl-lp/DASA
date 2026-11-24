@@ -8,17 +8,20 @@ independently below.
 import copy
 import json
 import math
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import pytest
 import yaml
 
 from plan_step import (
+    NoPlan,
     NotSupported,
     PlanError,
     build_plan,
     metres_to_lat_lon,
     plan_exists,
+    plan_mission,
     plan_text,
 )
 from plan_step.__main__ import main
@@ -604,3 +607,98 @@ def test_a_plan_holding_a_number_that_isnt_finite_is_refused(tmp_path):
     assert not ok and "finite" in reason
     with pytest.raises(ValueError):
         plan_text({"mission": {"plannedHomePosition": [0, 0, math.inf]}})
+
+
+# ---- Planning states held in memory (the generator's call) ---------------------------
+
+
+def _m01_inputs():
+    start = (M01 / "start.xml").read_text()
+    goal = (M01 / "goal.xml").read_text()
+    settings = yaml.safe_load((M01 / "simple.yaml").read_text())
+    return start, goal, settings
+
+
+def test_planning_m01_in_memory_gives_the_fixture_file():
+    start, goal, settings = _m01_inputs()
+    plan = plan_mission(start, goal, settings, CONFIG)
+    assert plan_text(plan) == (M01 / "mission.plan").read_text()
+
+
+def test_states_can_be_xml_elements_or_trees():
+    start, goal, settings = _m01_inputs()
+    as_text = plan_mission(start, goal, settings, CONFIG)
+    as_element = plan_mission(
+        ET.fromstring(start), ET.fromstring(goal), settings, CONFIG
+    )
+    as_tree = plan_mission(
+        ET.ElementTree(ET.fromstring(start)),
+        ET.ElementTree(ET.fromstring(goal)),
+        settings,
+        CONFIG,
+    )
+    assert as_element == as_text == as_tree
+
+
+def _folder_inputs(folder):
+    return (
+        (folder / "start.xml").read_text(),
+        (folder / "goal.xml").read_text(),
+        yaml.safe_load((folder / "settings.yaml").read_text()),
+    )
+
+
+def test_a_mission_the_drone_cant_fly_is_no_plan(tmp_path):
+    # The goal wants the drone in the air at the end; no task list ends there.
+    folder = _mission(tmp_path, {"W1": (40, 0, 20)}, goal_landed=False)
+    with pytest.raises(NoPlan, match="agent.landed"):
+        plan_mission(*_folder_inputs(folder), CONFIG)
+    assert plan_exists(folder, CONFIG)[0] is False  # still "no plan" from files
+
+
+@pytest.mark.parametrize(
+    "spoil",
+    [
+        lambda start, goal, settings: (start, "<env/>", settings),
+        lambda start, goal, settings: (
+            start,
+            goal,
+            {**settings, "postconditions": [{"hold_at": {"waypoint": "W1"}}]},
+        ),
+        lambda start, goal, settings: (
+            start,
+            goal,
+            {**settings, "postconditions": {"hold_at_each_waypoint": {"min_s": -1}}},
+        ),
+        lambda start, goal, settings: (start, "<env", settings),
+    ],
+    ids=["empty goal", "list-form settings", "negative hold", "unreadable goal"],
+)
+def test_input_written_wrong_is_an_error_not_no_plan(spoil):
+    # The generator draws again on NoPlan. Input it wrote wrong would fail the same
+    # way every time, so it must not look like a mission the drone can't fly.
+    with pytest.raises(PlanError) as raised:
+        plan_mission(*spoil(*_m01_inputs()), CONFIG)
+    assert not isinstance(raised.value, NoPlan | NotSupported)
+
+
+def test_a_hold_at_a_waypoint_the_goal_leaves_unvisited_is_an_error(tmp_path):
+    folder = _mission(
+        tmp_path, {"W1": (40, 0, 20)}, _hold(5), goal_visited={"W1": False}
+    )
+    with pytest.raises(PlanError) as raised:
+        plan_mission(*_folder_inputs(folder), CONFIG)
+    assert not isinstance(raised.value, NoPlan)
+
+
+def test_a_mission_this_version_cant_plan_is_not_supported(tmp_path):
+    pic = '    <clicked_pic type="bool" value="true"/>\n'
+    folder = _mission(tmp_path, {"W1": (40, 0, 20)}, goal_extra=pic)
+    with pytest.raises(NotSupported):
+        plan_mission(*_folder_inputs(folder), CONFIG)
+
+
+def test_the_config_must_be_given():
+    start, goal, settings = _m01_inputs()
+    with pytest.raises(TypeError):
+        plan_mission(start, goal, settings)  # no silent fallback to the repo's copy
