@@ -15,14 +15,14 @@ A verifier should get both right.
 
 | File | Made by | Read by |
 |---|---|---|
-| `simple.yaml` | written by hand | generator |
-| `mission.yaml`, `start.xml`, `goal.xml` | generator | plan step, verifier |
+| `simple.yaml` | written by hand | generator, plan step, verifier |
+| `start.xml`, `goal.xml` | generator | plan step, verifier |
 | `mission.plan` | plan step | harness |
 | `run.json` | harness | log reader |
 | `readings.json` | log reader | verifier |
 | `expected-verdict.json` | the answer the verifier should give | |
 
-Each run has its own `run.json`, `readings.json` and `expected-verdict.json`. Both use the same mission files.
+Each run has its own `run.json`, `readings.json` and `expected-verdict.json`. Both use the same `simple.yaml`, `start.xml` and `goal.xml`. The five-second hold comes from `simple.yaml`.
 
 `readings.json` groups the config's readings. `position` is `agent.x`, `agent.y` and `agent.z`. `velocity` is `agent.velocity.x`, `.y` and `.z`. `landed` is `agent.landed`. `nav_state` (PX4's flight mode; 3 is mission mode), `disarm_reason` and `arming_state` (1 disarmed, 2 armed) are the readings of those names. The file formats are a first guess. Change them if they don't work for you.
 
