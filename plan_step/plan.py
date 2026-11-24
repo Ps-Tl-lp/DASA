@@ -30,9 +30,6 @@ from .config import REPO_ROOT, follow, is_config_name, load_config
 from .geo import metres_to_lat_lon
 from .states import StateError, read_state, waypoint_ids
 
-# The tasks this version can plan.
-SUPPORTED_TASKS = ("takeoff", "goto", "return_home")
-
 # Postconditions in the mission settings that the plan step understands.
 # hold_at_each_waypoint sets every goto's hold time. The plan step has nothing to do for
 # the others: the generator and the verifier check them.
