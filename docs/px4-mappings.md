@@ -265,7 +265,7 @@ That is the planned hold −0.05 to +0.24 s, whichever way the drone leaves. Wit
 
 - **Counting only while nearly stopped** (under 0.3 m/s) was also tried. It reads 1.1 to 1.7 s short and depends on how the drone arrives, so it was not adopted.
 - **Elsewhere:** PX4's own tests check a mission only while its item index is in range, ArduPilot's `wait_waypoint` fails if the vehicle leaves AUTO, and PGFuzz counts a hold only in LOITER.
-- **A variant can't gain by faking the mode.** `nav_state` is PX4's own report, but the mode condition only ever shortens a stretch. A variant that claims it is still in mission mode gets at most what the zone alone would give.
+- Gazebo confirms where the drone was, but the hold check relies on PX4 to report when it switched to return mode.
 
 **`at_goal.within_m`.** The goal state says the drone ends at (0, 0, 0). It ended 0.08 m away in the Gazebo log and 0.28 m away in the SIH log. An exact comparison would fail both. Seventeen more Gazebo flights from a local trial of mine (a newer v1.18 release candidate, in PX4's Docker image) ended 0.01 to 0.09 m away. **Proposed: 0.5 m.** Across 28 complete Gazebo flights of mine the furthest end point was 0.09 m from the base, so 0.5 m leaves room without letting a landing somewhere else pass. A flight with GPS switched off in the air ended 6.92 m away. SIH lands less precisely, up to 1.09 m off at 10x speed, so it would need a larger value.
 
