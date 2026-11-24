@@ -14,6 +14,29 @@ Setup and the other commands are in [CONTRIBUTING.md](../CONTRIBUTING.md#local-c
 
 To run part of the suite, give pytest a file (`pytest tests/test_missions.py`) or part of a test name (`pytest -k survey`).
 
+### Direct verifier examples
+
+Run `pytest tests/test_verifier.py -v` to see each scenario by name. These tests
+call the verifier and its checks directly, without PX4, Gazebo or real flight
+logs. They use M01's start/goal states and the current platform config. Each
+test builds a small trace whose expected result follows from the mission rules.
+`flight` is the shared short trace: visit W1, return to base, land, then disarm.
+It intentionally does not satisfy the five-second hold; the complete-mission
+test supplies its own longer trace.
+
+The examples cover visit and final-state boundaries, missing readings and gaps,
+mission-mode hold time, landing/disarm order and reason, camera trigger location,
+visit order, geofence height, timeout, evidence cross-check precedence, input
+validation, and running later checks after a failure. Boundary inputs use the
+config values; the explicit 4.75/4.70-second examples document the current
+0.25-second allowance for a five-second hold. To add a case, copy the nearest
+scenario, use `dataclasses.replace` to change only the relevant readings, and
+explain the expected outcome in a comment. Do not derive expected verdicts by
+running the verifier first.
+
+These are synthetic rule tests, not new flight results. Camera tests establish
+only trigger evidence; they do not settle whether a photo was actually taken.
+
 ## Layout
 
 - `tests/`: pytest tests in files named `test_*.py`. Name each test for the behavior it checks, such as `test_mission_ends_with_return_to_launch`.
