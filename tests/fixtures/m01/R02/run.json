@@ -4,5 +4,11 @@
   "plan": "../mission.plan",
   "run_status": "completed",
   "source": "simulator",
-  "log": "R02.ulg"
+  "log": "R02.ulg",
+  "record": {
+    "px4_commit": "fca3df865a",
+    "simulator": "gazebo (gz sim, headless), PX4 SITL",
+    "speed": 4,
+    "sim_model": "gz_x500"
+  }
 }

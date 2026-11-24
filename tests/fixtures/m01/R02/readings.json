@@ -2,6 +2,7 @@
   "mission_id": "M01",
   "run_id": "R02",
   "run_status": "completed",
+  "record": {"px4_commit": "fca3df865a", "simulator": "gazebo (gz sim, headless), PX4 SITL", "speed": 4},
   "position": [
     {"t_s": 0.072, "x": 0.0, "y": 0.0, "z": 0.0},
     {"t_s": 0.14, "x": 0.0, "y": 0.0, "z": 0.0},

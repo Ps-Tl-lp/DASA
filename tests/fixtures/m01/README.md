@@ -9,7 +9,7 @@ M01: fly to W1 (50 m north of the base, 20 m up), stay there 5 s, land back at t
 | R01 (this folder) | made up by hand | 2.55 s while PX4 flew the mission (3.40 s counting the return) | FAIL, hold too short |
 | R02 (`R02/`) | a real Gazebo flight of `mission.plan` | 5.03 s while PX4 flew the mission (6.11 s counting the return) | PASS |
 
-A verifier should get both right.
+A verifier should get both right. R02’s readings include the PX4 build, simulator and sim speed from its run record. R01 is synthetic and has no flight setup to copy.
 
 ## Files
 
