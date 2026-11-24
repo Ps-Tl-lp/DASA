@@ -74,14 +74,17 @@ def _state_xml(env_id, waypoints, landed=True, extra_waypoint_xml="", base=(0, 0
 def _mission(
     folder,
     positions,
-    postconditions=(),
+    postconditions=None,
     goal_landed=True,
     goal_visited=None,
     goal_extra="",
     start_visited=None,
     base=(0, 0, 0),
 ):
-    """Write mission.yaml, start.xml and goal.xml. positions: {id: (x, y, z)}."""
+    """Write start.xml, goal.xml and settings.yaml. positions: {id: (x, y, z)}.
+
+    postconditions is the settings' mapping, such as {"hold_at_each_waypoint": ...}.
+    """
     folder.mkdir(parents=True, exist_ok=True)
     goal_visited = (
         goal_visited if goal_visited is not None else dict.fromkeys(positions, True)
@@ -95,14 +98,27 @@ def _mission(
             "Sg", goal, landed=goal_landed, extra_waypoint_xml=goal_extra, base=base
         )
     )
+    # Laid out like the M01 fixture's simple.yaml. The plan step reads only
+    # postconditions.
     spec = {
         "mission_id": "T",
-        "start": "start.xml",
-        "goal": "goal.xml",
-        "postconditions": list(postconditions),
+        "waypoints": len(positions),
+        "goal": {"waypoint.visited": True, "agent_ends": "base_landed"},
+        "postconditions": postconditions or {},
     }
-    (folder / "mission.yaml").write_text(yaml.safe_dump(spec, sort_keys=False))
+    (folder / "settings.yaml").write_text(yaml.safe_dump(spec, sort_keys=False))
     return folder
+
+
+def _set_postconditions(folder, postconditions):
+    """Replace settings.yaml's postconditions with any value, even a wrong one."""
+    spec = yaml.safe_load((folder / "settings.yaml").read_text())
+    spec["postconditions"] = postconditions
+    (folder / "settings.yaml").write_text(yaml.safe_dump(spec))
+
+
+def _hold(seconds):
+    return {"hold_at_each_waypoint": {"min_s": seconds}}
 
 
 def _items(folder):
@@ -180,14 +196,8 @@ def test_takeoff_climbs_to_the_first_waypoint_height(tmp_path):
     )
 
 
-def test_hold_comes_from_hold_at_and_defaults_to_zero(tmp_path):
-    held = _items(
-        _mission(
-            tmp_path / "a",
-            {"W1": (40, 0, 20)},
-            [{"hold_at": {"waypoint": "W1", "min_s": 7}}],
-        )
-    )
+def test_hold_comes_from_the_settings_and_defaults_to_zero(tmp_path):
+    held = _items(_mission(tmp_path / "a", {"W1": (40, 0, 20)}, _hold(7)))
     unheld = _items(_mission(tmp_path / "b", {"W1": (40, 0, 20)}))
     assert held[1]["params"][0] == 7
     assert unheld[1]["params"][0] == 0
@@ -220,22 +230,14 @@ def test_a_goal_the_tasks_cant_reach_has_no_plan(tmp_path):
         build_plan(folder, CONFIG)
 
 
-def test_hold_at_an_unknown_waypoint_has_no_plan(tmp_path):
-    folder = _mission(
-        tmp_path, {"W1": (40, 0, 20)}, [{"hold_at": {"waypoint": "W9", "min_s": 5}}]
-    )
-    with pytest.raises(PlanError, match="W9"):
-        build_plan(folder, CONFIG)
-
-
-def test_hold_at_a_waypoint_the_goal_leaves_unvisited_has_no_plan(tmp_path):
+def test_a_hold_at_a_waypoint_the_goal_leaves_unvisited_has_no_plan(tmp_path):
     folder = _mission(
         tmp_path,
         {"W1": (40, 0, 20), "W2": (80, 0, 20)},
-        [{"hold_at": {"waypoint": "W2", "min_s": 5}}],
+        _hold(5),
         goal_visited={"W1": True, "W2": False},
     )
-    with pytest.raises(PlanError, match="isn't visited"):
+    with pytest.raises(PlanError, match="W2.*isn't visited"):
         build_plan(folder, CONFIG)
 
 
@@ -251,7 +253,7 @@ def test_a_picture_is_not_supported_yet(tmp_path):
 
 def test_a_visit_order_is_not_supported_yet(tmp_path):
     folder = _mission(
-        tmp_path, {"W1": (40, 0, 20)}, [{"visits_in_order": {"waypoints": ["W1"]}}]
+        tmp_path, {"W1": (40, 0, 20)}, {"visits_in_order": {"waypoints": ["W1"]}}
     )
     with pytest.raises(NotSupported, match="visits_in_order"):
         build_plan(folder, CONFIG)
@@ -261,7 +263,7 @@ def test_a_geofence_postcondition_doesnt_change_the_plan(tmp_path):
     fenced = _mission(
         tmp_path / "a",
         {"W1": (40, 0, 20)},
-        [{"stays_in_geofence": {"max_distance_m": 60, "max_height_m": 35}}],
+        {"stays_in_geofence": {"max_distance_m": 60, "max_height_m": 35}},
     )
     plain = _mission(tmp_path / "b", {"W1": (40, 0, 20)})
     assert _items(fenced) == _items(plain)
@@ -284,6 +286,15 @@ def test_command_line_writes_the_plan(tmp_path, capsys):
     assert out.read_text() == (M01 / "mission.plan").read_text()
 
 
+def test_command_line_takes_the_settings_file(tmp_path, capsys):
+    folder = _mission(tmp_path / "m", {"W1": (40, 0, 20)}, _hold(6))
+    elsewhere = tmp_path / "simple.yaml"
+    (folder / "settings.yaml").rename(elsewhere)
+    out = tmp_path / "x.plan"
+    assert main([str(folder), "--settings", str(elsewhere), "--out", str(out)]) == 0
+    assert json.loads(out.read_text())["mission"]["items"][1]["params"][0] == 6
+
+
 def test_command_line_says_why_there_is_no_plan(tmp_path, capsys):
     folder = _mission(tmp_path, {"W1": (40, 0, 20)}, goal_landed=False)
     assert main([str(folder), "--out", str(tmp_path / "x.plan")]) == 1
@@ -294,13 +305,9 @@ def test_command_line_says_why_there_is_no_plan(tmp_path, capsys):
 # ---- Which waypoint, which height, which goto ----------------------------------------
 
 
-def test_each_hold_goes_to_the_waypoint_its_hold_at_names(tmp_path):
-    folder = _mission(
-        tmp_path,
-        {"W1": (40, 0, 20), "W2": (80, 0, 20)},
-        [{"hold_at": {"waypoint": "W2", "min_s": 7}}],
-    )
-    assert [item["params"][0] for item in _items(folder)[1:3]] == [0, 7]
+def test_every_waypoint_gets_the_same_hold(tmp_path):
+    folder = _mission(tmp_path, {"W1": (40, 0, 20), "W2": (80, 0, 20)}, _hold(7))
+    assert [item["params"][0] for item in _items(folder)[1:3]] == [7, 7]
 
 
 def test_takeoff_height_is_the_first_gotos(tmp_path):
@@ -326,23 +333,17 @@ def test_a_goto_east_of_home_lands_east_at_the_right_distance(tmp_path):
     )
 
 
-def test_hold_at_on_a_mission_that_changes_nothing_has_no_plan(tmp_path):
+def test_a_hold_on_a_mission_that_changes_nothing_has_no_plan(tmp_path):
     folder = _mission(
-        tmp_path,
-        {"W1": (40, 0, 20)},
-        [{"hold_at": {"waypoint": "W1", "min_s": 5}}],
-        goal_visited={"W1": False},
+        tmp_path, {"W1": (40, 0, 20)}, _hold(5), goal_visited={"W1": False}
     )
     ok, reason = plan_exists(folder, CONFIG)
     assert not ok and "isn't visited" in reason
 
 
-def test_hold_at_a_waypoint_already_visited_still_flies_there(tmp_path):
+def test_a_hold_at_a_waypoint_already_visited_still_flies_there(tmp_path):
     folder = _mission(
-        tmp_path,
-        {"W1": (40, 0, 20)},
-        [{"hold_at": {"waypoint": "W1", "min_s": 5}}],
-        start_visited={"W1": True},
+        tmp_path, {"W1": (40, 0, 20)}, _hold(5), start_visited={"W1": True}
     )
     items = _items(folder)
     assert [item["command"] for item in items] == [22, 16, 20]
@@ -434,24 +435,20 @@ def test_double_and_one_zero_bools_are_read(tmp_path):
     "postconditions, works",
     [
         (None, True),  # `postconditions:` with nothing under it
-        (["disarmed_after_landing"], True),  # a bare name
-        ([{"hold_at": {"waypoint": "W1"}}], False),  # no min_s
-        ([{"hold_at": {"min_s": 5}}], False),  # no waypoint
+        ({"disarmed_after_landing": None}, True),  # a name with nothing under it
+        ({"hold_at_each_waypoint": {"min_s": 2.5}}, True),  # seconds needn't be whole
+        ({"hold_at_each_waypoint": {}}, False),  # no min_s
+        ({"hold_at_each_waypoint": None}, False),  # no min_s either
     ],
 )
 def test_postconditions_written_in_other_ways(tmp_path, postconditions, works):
     folder = _mission(tmp_path, {"W1": (40, 0, 20)})
-    spec = yaml.safe_load((folder / "mission.yaml").read_text())
-    spec["postconditions"] = postconditions
-    (folder / "mission.yaml").write_text(yaml.safe_dump(spec))
+    _set_postconditions(folder, postconditions)
     assert plan_exists(folder, CONFIG)[0] is works
 
 
-def test_a_numeric_waypoint_id_matches_its_hold_at(tmp_path):
-    folder = _mission(tmp_path, {"1": (40, 0, 20)})
-    spec = yaml.safe_load((folder / "mission.yaml").read_text())
-    spec["postconditions"] = [{"hold_at": {"waypoint": 1, "min_s": 5}}]
-    (folder / "mission.yaml").write_text(yaml.safe_dump(spec))
+def test_a_numeric_waypoint_id_gets_the_hold(tmp_path):
+    folder = _mission(tmp_path, {"1": (40, 0, 20)}, _hold(5))
     assert _items(folder)[1]["params"][0] == 5
 
 
@@ -461,21 +458,72 @@ def test_waypoints_that_sort_equal_as_numbers_keep_a_fixed_order():
 
 
 @pytest.mark.parametrize(
-    "spec_change",
+    "postconditions, named",
     [
-        {"postconditions": [{"hold_at": {"waypoint": "W1", "min_s": None}}]},
-        {"postconditions": [{"hold_at": {"waypoint": "W1", "min_s": "five"}}]},
-        {"postconditions": [{"hold_at": {"waypoint": "W1", "min_s": -1}}]},
-        {"postconditions": [{"hold_at": "W1"}]},
-        {"postconditions": [{"hold_at": ["W1", 5]}]},
-        {"postconditions": "hold_at"},
-        {"start": None},
+        ({"hold_at_each_waypoint": {"min_s": None}}, "min_s"),
+        ({"hold_at_each_waypoint": {"min_s": "five"}}, "min_s"),
+        ({"hold_at_each_waypoint": {"min_s": -1}}, "min_s"),
+        ({"hold_at_each_waypoint": {"min_s": True}}, "min_s"),
+        ({"hold_at_each_waypoint": {"min_s": float("nan")}}, "min_s"),
+        ({"hold_at_each_waypoint": {"min_s": 5, "max_s": 9}}, "max_s"),
+        ({"hold_at_each_waypoint": 5}, "hold_at_each_waypoint"),
+        ({"hold_at_each_waypoint": [5]}, "hold_at_each_waypoint"),
+        ("hold_at_each_waypoint", "mapping"),
+        # The older mission.yaml form, a list with one hold_at per waypoint.
+        ([{"hold_at": {"waypoint": "W1", "min_s": 5}}], "mapping"),
     ],
 )
-def test_a_mission_yaml_written_wrong_has_no_plan(tmp_path, spec_change):
+def test_settings_written_wrong_have_no_plan(tmp_path, postconditions, named):
     folder = _mission(tmp_path, {"W1": (40, 0, 20)})
-    spec = yaml.safe_load((folder / "mission.yaml").read_text())
-    spec.update(spec_change)
-    (folder / "mission.yaml").write_text(yaml.safe_dump(spec))
+    _set_postconditions(folder, postconditions)
     ok, reason = plan_exists(folder, CONFIG)
-    assert not ok and reason
+    assert not ok and named in reason
+
+
+def test_settings_that_arent_a_mapping_have_no_plan(tmp_path):
+    folder = _mission(tmp_path, {"W1": (40, 0, 20)})
+    (folder / "settings.yaml").write_text("- just\n- a list\n")
+    ok, reason = plan_exists(folder, CONFIG)
+    assert not ok and "settings.yaml" in reason
+
+
+def test_a_postcondition_the_settings_cant_take_is_not_supported(tmp_path):
+    # hold_at itself is the config's per-waypoint check, not a mission setting.
+    folder = _mission(
+        tmp_path, {"W1": (40, 0, 20)}, {"hold_at": {"waypoint": "W1", "min_s": 5}}
+    )
+    with pytest.raises(NotSupported, match="hold_at"):
+        build_plan(folder, CONFIG)
+
+
+# ---- Finding the settings ------------------------------------------------------------
+
+
+def test_a_folder_with_no_settings_file_has_no_plan(tmp_path):
+    folder = _mission(tmp_path, {"W1": (40, 0, 20)})
+    (folder / "settings.yaml").unlink()
+    ok, reason = plan_exists(folder, CONFIG)
+    assert not ok and "none" in reason
+
+
+def test_a_folder_with_two_settings_files_has_no_plan(tmp_path):
+    folder = _mission(tmp_path, {"W1": (40, 0, 20)})
+    (folder / "mission.yaml").write_text((folder / "settings.yaml").read_text())
+    ok, reason = plan_exists(folder, CONFIG)
+    assert not ok and "mission.yaml, settings.yaml" in reason
+
+
+def test_settings_can_be_named_and_kept_elsewhere(tmp_path):
+    folder = _mission(tmp_path / "m", {"W1": (40, 0, 20)}, _hold(5))
+    elsewhere = tmp_path / "simple.yaml"
+    (folder / "settings.yaml").rename(elsewhere)
+    plan = build_plan(folder, CONFIG, settings=elsewhere)
+    assert plan["mission"]["items"][1]["params"][0] == 5
+    assert plan_exists(folder, CONFIG, settings=elsewhere) == (True, "")
+
+
+def test_a_missing_state_file_has_no_plan_and_names_it(tmp_path):
+    folder = _mission(tmp_path, {"W1": (40, 0, 20)})
+    (folder / "goal.xml").unlink()
+    ok, reason = plan_exists(folder, CONFIG)
+    assert not ok and "goal.xml" in reason

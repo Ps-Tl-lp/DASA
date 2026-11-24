@@ -1,4 +1,4 @@
-"""python -m plan_step MISSION_FOLDER [--out PATH] [--config PATH]"""
+"""python -m plan_step MISSION_FOLDER [--settings PATH] [--out PATH] [--config PATH]"""
 
 import argparse
 import sys
@@ -11,7 +11,13 @@ from .plan import PlanError, build_plan, plan_text
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="python -m plan_step", description=__doc__)
     parser.add_argument(
-        "mission", type=Path, help="folder with mission.yaml and its two states"
+        "mission", type=Path, help="folder with start.xml, goal.xml and their settings"
+    )
+    parser.add_argument(
+        "--settings",
+        type=Path,
+        help="the mission settings the states were made from "
+        "(default: the one .yaml file in MISSION)",
     )
     parser.add_argument(
         "--out",
@@ -24,7 +30,9 @@ def main(argv=None):
     args = parser.parse_args(argv)
 
     try:
-        plan = build_plan(args.mission, load_config(args.config))
+        plan = build_plan(
+            args.mission, load_config(args.config), settings=args.settings
+        )
     except PlanError as error:
         print(f"no plan: {error}", file=sys.stderr)
         return 1

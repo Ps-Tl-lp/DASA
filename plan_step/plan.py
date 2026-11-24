@@ -1,9 +1,13 @@
 """Turn a mission into a QGroundControl .plan file (the plan step).
 
+A mission is a folder with start.xml, goal.xml and the mission settings the generator
+made them from (simple.yaml for M01). The two states can't show a hold, so it comes from
+the settings: `hold_at_each_waypoint: {min_s: 5}` gives every waypoint a 5 s hold.
+
 What it does, in the order the config's `tasks` section describes:
 
 1. List the tasks in a fixed order: takeoff, a goto for each waypoint that needs one (in
-   waypoint id order), return_home. A waypoint a hold_at names always gets a goto. If
+   waypoint id order), return_home. A waypoint with a hold always gets a goto. If
    nothing changes and nothing is held, there are no tasks at all.
 2. Check the list: walk it from the start state. Each task's `needs` must hold, then its
    `sets` apply. The result must equal the goal state. If not, there is no plan, and the
@@ -17,6 +21,7 @@ mission that asks for more (a picture, a visit order) is refused with NotSupport
 
 import copy
 import json
+import math
 from pathlib import Path
 
 import yaml
@@ -28,10 +33,15 @@ from .states import StateError, read_state, waypoint_ids
 # The tasks this version can plan.
 SUPPORTED_TASKS = ("takeoff", "goto", "return_home")
 
-# Postconditions the plan step understands. hold_at sets a goto's hold time. The plan
-# step has nothing to do for the others: the generator and the verifier check them.
-PLAN_POSTCONDITIONS = {"hold_at"}
+# Postconditions in the mission settings that the plan step understands.
+# hold_at_each_waypoint sets every goto's hold time. The plan step has nothing to do for
+# the others: the generator and the verifier check them.
+PLAN_POSTCONDITIONS = {"hold_at_each_waypoint"}
 IGNORED_POSTCONDITIONS = {"stays_in_geofence", "disarmed_after_landing"}
+
+# The generator writes the two states under these names, beside the mission settings.
+START_FILE = "start.xml"
+GOAL_FILE = "goal.xml"
 
 # QGroundControl's own key order for an item, as in missions/simple.plan. Keeping it
 # makes our files diff cleanly against plans made in QGroundControl.
@@ -63,34 +73,30 @@ class NotSupported(PlanError):
 
 
 class Mission:
-    """A mission folder: mission.yaml plus the two states it names."""
+    """A mission folder: start.xml, goal.xml and the settings they were made from."""
 
-    def __init__(self, folder):
+    def __init__(self, folder, settings=None):
         folder = Path(folder)
+        settings = Path(settings) if settings is not None else settings_file(folder)
+        # What the settings ask for, as {name: fields}.
+        self.requested = _read_postconditions(settings)
         try:
-            with open(folder / "mission.yaml") as f:
-                spec = yaml.safe_load(f)
-        except (OSError, yaml.YAMLError) as error:
-            raise PlanError(f"can't read mission.yaml: {error}") from error
-        if not isinstance(spec, dict):
-            raise PlanError("mission.yaml isn't a mapping of keys to values")
-        for key in ("mission_id", "start", "goal"):
-            if key not in spec:
-                raise PlanError(f"mission.yaml has no {key}")
-        for key in ("start", "goal"):
-            if not isinstance(spec[key], str) or not spec[key]:
-                raise PlanError(f"mission.yaml's {key} must be a file name")
-        postconditions = spec.get("postconditions") or []
-        if not isinstance(postconditions, list):
-            raise PlanError("mission.yaml's postconditions must be a list")
-        self.mission_id = spec["mission_id"]
-        try:
-            self.start = read_state(folder / spec["start"])
-            self.goal = read_state(folder / spec["goal"])
+            self.start = read_state(folder / START_FILE)
+            self.goal = read_state(folder / GOAL_FILE)
         except StateError as error:
             raise PlanError(str(error)) from error
-        self.postconditions = [_postcondition(p) for p in postconditions]
         self.waypoints = waypoint_ids(self.start)
+        # The same as one (name, fields) per check. hold_at_each_waypoint becomes one
+        # hold_at per waypoint, as the generator expands it, because the config's
+        # hold_at check and its $hold_s input are per waypoint.
+        self.postconditions = []
+        for name, fields in self.requested.items():
+            if name == "hold_at_each_waypoint":
+                self.postconditions += [
+                    ("hold_at", {"waypoint": wp, **fields}) for wp in self.waypoints
+                ]
+            else:
+                self.postconditions.append((name, fields))
         # Positions are metres from the base, so the base is the origin. A base anywhere
         # else would mean subtracting it from every position, sideways and up.
         base = tuple(self.start.get(f"base.{axis}") for axis in "xyz")
@@ -101,43 +107,80 @@ class Mission:
             )
 
     def holds(self):
-        """{waypoint id: hold_at fields} for every hold_at postcondition."""
-        holds = {}
-        for name, fields in self.postconditions:
-            if name == "hold_at":
-                if "waypoint" not in fields:
-                    raise PlanError("a hold_at has no waypoint")
-                holds[fields["waypoint"]] = fields
-        return holds
+        """{waypoint id: hold_at fields} for every waypoint with a hold."""
+        return {
+            fields["waypoint"]: fields
+            for name, fields in self.postconditions
+            if name == "hold_at"
+        }
 
 
-def _postcondition(item):
-    """One postconditions entry as (name, fields): `- hold_at: {...}` or `- name`."""
-    if isinstance(item, str):
-        return item, {}
-    if isinstance(item, dict) and len(item) == 1:
-        name, fields = next(iter(item.items()))
-        if fields is None:
-            fields = {}
+def settings_file(folder):
+    """The mission settings kept beside the two states: the folder's one .yaml file."""
+    folder = Path(folder)
+    found = sorted(folder.glob("*.yaml"))
+    if len(found) == 1:
+        return found[0]
+    listed = ", ".join(path.name for path in found) if found else "none"
+    raise PlanError(
+        f"{folder.name} should hold one mission settings file (.yaml) beside "
+        f"{START_FILE} and {GOAL_FILE}, but has {listed}; name the one to use"
+    )
+
+
+def _read_postconditions(path):
+    """The settings' postconditions as {name: fields}, after checking their shape."""
+    try:
+        with open(path) as f:
+            spec = yaml.safe_load(f)
+    except (OSError, yaml.YAMLError) as error:
+        raise PlanError(f"can't read the mission settings: {error}") from error
+    if not isinstance(spec, dict):
+        raise PlanError(f"{path.name} isn't a mapping of settings to values")
+    requested = spec.get("postconditions") or {}
+    if not isinstance(requested, dict):
+        # A list is the older mission.yaml form, `- hold_at: {waypoint: W1, min_s: 5}`.
+        raise PlanError(
+            f"{path.name}'s postconditions must be a mapping, such as "
+            "`hold_at_each_waypoint: {min_s: 5}`, not a list or a single value"
+        )
+    checked = {}
+    for name, fields in requested.items():
+        fields = {} if fields is None else fields  # `disarmed_after_landing:` alone
         if not isinstance(name, str) or not isinstance(fields, dict):
-            raise PlanError(f"postcondition {item!r} isn't one `name: {{fields}}` item")
-        fields = dict(fields)
-        if "waypoint" in fields:
-            fields["waypoint"] = str(fields["waypoint"])  # YAML reads `1` as a number
-        if name == "hold_at" and "min_s" in fields:
-            hold = fields["min_s"]
-            if isinstance(hold, bool) or not isinstance(hold, int | float) or hold < 0:
-                raise PlanError(
-                    f"hold_at's min_s must be a number of seconds, not {hold!r}"
-                )
-        return name, fields
-    raise PlanError(f"postcondition {item!r} isn't one `name: {{fields}}` item")
+            raise PlanError(f"postcondition {name!r} isn't written `name: {{fields}}`")
+        checked[name] = dict(fields)
+    if "hold_at_each_waypoint" in checked:
+        _check_hold(checked["hold_at_each_waypoint"])
+    return checked
 
 
-def build_plan(mission_folder, config=None):
-    """The whole .plan file for a mission, as a dict ready for json.dump."""
+def _check_hold(fields):
+    extra = sorted(str(key) for key in fields if key != "min_s")
+    if extra:
+        raise PlanError(
+            f"hold_at_each_waypoint takes only min_s, not {', '.join(extra)}"
+        )
+    seconds = fields.get("min_s")
+    if (
+        isinstance(seconds, bool)
+        or not isinstance(seconds, int | float)
+        or not math.isfinite(seconds)
+        or seconds < 0
+    ):
+        raise PlanError(
+            "hold_at_each_waypoint's min_s must be a number of seconds, "
+            f"not {seconds!r}"
+        )
+
+
+def build_plan(mission_folder, config=None, *, settings=None):
+    """The whole .plan file for a mission, as a dict ready for json.dump.
+
+    `settings` is the mission settings file; by default, the one in the folder.
+    """
     config = config or load_config()
-    mission = Mission(mission_folder)
+    mission = Mission(mission_folder, settings)
     tasks = choose_tasks(config, mission)
     check_tasks(config, mission, tasks)
     items = [_plan_item(config, mission, tasks, i) for i in range(len(tasks))]
@@ -156,14 +199,14 @@ def plan_text(plan):
     return json.dumps(_qgc_numbers(plan), indent=2) + "\n"
 
 
-def plan_exists(mission_folder, config=None):
+def plan_exists(mission_folder, config=None, *, settings=None):
     """The `plan_exists` helper: (True, "") if there is a plan, else (False, reason).
 
     NotSupported is raised, not returned: "this version can't plan it yet" is not "the
     drone can't do it", and the generator shouldn't move on to another vehicle type.
     """
     try:
-        build_plan(mission_folder, config)
+        build_plan(mission_folder, config, settings=settings)
     except NotSupported:
         raise
     except PlanError as error:
@@ -176,7 +219,7 @@ def plan_exists(mission_folder, config=None):
 
 def choose_tasks(config, mission):
     """The task list in the fixed order, as [(task name, waypoint id or None), ...]."""
-    for name, _fields in mission.postconditions:
+    for name in mission.requested:
         if name not in PLAN_POSTCONDITIONS | IGNORED_POSTCONDITIONS:
             raise NotSupported(
                 f"postcondition {name} is not supported by this plan step"
@@ -195,13 +238,10 @@ def choose_tasks(config, mission):
 
     holds = mission.holds()
     for wp in holds:
-        if wp not in mission.waypoints:
-            raise PlanError(
-                f"hold_at names waypoint {wp}, which the mission doesn't have"
-            )
         if mission.goal.get(f"waypoint.{wp}.visited") is not True:
             raise PlanError(
-                f"hold_at names waypoint {wp}, but the goal says it isn't visited"
+                f"the settings ask for a hold at waypoint {wp}, but the goal says it "
+                "isn't visited"
             )
 
     gotos = [

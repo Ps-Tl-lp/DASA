@@ -1,6 +1,6 @@
-"""The plan step: a mission (mission.yaml, start.xml, goal.xml) to a .plan file.
+"""The plan step: a mission (start.xml, goal.xml and their settings) to a .plan file.
 
-    python -m plan_step MISSION_FOLDER [--out PATH] [--config PATH]
+    python -m plan_step MISSION_FOLDER [--settings PATH] [--out PATH] [--config PATH]
 
 The rules come from platform_configs/px4.yaml (`tasks`, `plan_item_defaults`,
 `inputs`, `plan_template`, `base_lat_lon`). This version covers the simple mission:
