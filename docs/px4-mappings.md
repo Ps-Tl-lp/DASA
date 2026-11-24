@@ -42,12 +42,15 @@ Docs: [VehicleLocalPosition](https://docs.px4.io/main/en/msg_docs/VehicleLocalPo
 - **The log-only path** (`log_only_readings`) keeps every sample its topics logged. It isn't cut to the ground-truth span.
 - **The recording** (`run.json`'s `recording`, a file name in the run folder) is JSON lines written by the harness:
   - a pose line is `{"k": "pose", "t": sim seconds, "p": [east, north, up]}` for the vehicle, which is the first model on `sim.pose_topic` whose name starts with `sim.vehicle_model_prefix`;
+  - the same pose again at the same `t` is read once, but two different poses at one `t` make the recording unusable: one model can't be in two places at once;
   - a `{"k": "pubs"}` line lists the topic's publishers;
   - a `{"k": "info"}` line carries the topic, the model found, or an `error`.
 - **Coverage and clock.** The harness starts the recorder before PX4 starts logging, so the recording covers every log sample. At 4x its samples are 0.068 s apart, like the log's. In SITL lockstep PX4's clock is the sim clock, so `t` × 10⁶ is a log timestamp with no offset (2026-11-23 spike). A recorded sample's reading time is (`t` × 10⁶ − `time_zero_us`) / 10⁶ seconds.
 - **The cross-check.**
   - **Why it works.** PX4's `gz_bridge` reads the same Gazebo topic, so in a correct run every log sample has a recorded sample at the same sim time with the same position. A Gazebo spike on 2026-11-23 matched 1403 of 1403 samples within 2.1 µm, and 5 flights with a full recording matched within 5.2 µm. PX4 logs the ground truth as float32, which rounds it by that much. Both clocks sit on Gazebo's 4 ms physics step, and in those 5 flights every log sample had a recorded one at the same stamp.
   - **How it compares.** Positions are compared in the world frame, before `subtract_first`. Down is the log's `z`, compared with the recording's up flipped.
+  - **A damaged log.** pyulog skips data it can't read and only flags it. The log reader then writes `log_problem` in `readings.json` and makes the cross-check INCONCLUSIVE, because the samples left can still match the recording. This covers R5's corrupted log. A log pyulog can't open, or one with nothing left to time, is read like no log. The verifier doesn't read `log_problem` yet.
+  - **No log.** A run whose `run.json` names no log is INCONCLUSIVE. The harness writes one when it stops before PX4 logs, for example when the simulator doesn't start. The log reader still writes its `readings.json`, with empty readings and `log_problem` saying there is no log, so the verifier gives the verdict as for any other run.
   - **Outcomes.** A harness that records always names the recording in `run.json`, even if the recorder failed. A run that names a recording whose file is missing, empty or shorter than the log is INCONCLUSIVE. Only a run with no `recording` key at all, flown before the harness recorded, has no cross-check: it is read from the log alone and judged on it.
   - **A disagreement** makes the run INCONCLUSIVE, whatever the other checks say, and is reported as its own check, `evidence_cross_check`. A log that doesn't match the simulator is invalid evidence, and a variant that edits its own log is a finding in itself.
 
@@ -88,7 +91,7 @@ Docs: [VehicleStatus](https://docs.px4.io/main/en/msg_docs/VehicleStatus.html), 
 
 Moved from `px4.yaml`'s comments. Each check gives PASS, FAIL, or INCONCLUSIVE when the log can't settle it. Which postconditions a mission has, and their values (the geofence size, the hold at each waypoint, the order), come from the mission.
 
-- **How checks combine.** A run's verdict is INCONCLUSIVE if the log doesn't match Gazebo's recording (`cross_check`). Otherwise it is FAIL if any check is FAIL, else INCONCLUSIVE if any is INCONCLUSIVE, else PASS.
+- **How checks combine.** A run's verdict is INCONCLUSIVE if the log doesn't match Gazebo's recording (`cross_check`), or if the log reader found the log damaged or missing (`log_problem`). Otherwise it is FAIL if any check is FAIL, else INCONCLUSIVE if any is INCONCLUSIVE, else PASS.
   - **Every check reports.** Every check runs and reports, whatever the others give, so the report lists every problem. A run the harness marks inconclusive (an `assumed` precondition failed, or the flight didn't finish) still lists every check, each INCONCLUSIVE with the harness's reason.
   - **The cross-check** comes from `readings.json`'s `cross_check`, and the verifier reports it as one more check, `evidence_cross_check`.
 - **FAIL only on evidence.** A check is FAIL only on a violation seen in the log. One the log stopped too early to settle is INCONCLUSIVE, so a flight cut short in the air is never FAIL for being cut short. Two more cases where the evidence can't settle a check:
