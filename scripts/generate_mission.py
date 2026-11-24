@@ -10,6 +10,11 @@ from pathlib import Path
 
 import yaml
 
+# The plan step is a package at the repo root, and this script runs from scripts/.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from plan_step import NoPlan, PlanError, plan_mission  # noqa: E402
+from plan_step.config import load_config as load_plan_config  # noqa: E402
+
 AXES = ("x", "y", "z")
 
 # Positions are metres from the base, so the base is always here.
@@ -198,8 +203,9 @@ def _pick_vehicle(config, names, problems):
         candidates.append((vehicle, flags))
     if not candidates:
         return None
-    # PLACEHOLDER: preconditions.tasks (plan_exists) isn't run, so the next type
-    # is never tried. Every supported mission flies with the least-equipped type.
+    # PLACEHOLDER: preconditions.tasks runs in generate(), but only for this type: a
+    # mission with no plan stops the generator, and the next type is never tried.
+    # Every supported mission flies with the least-equipped type.
     # min() keeps the first of equal counts, so a tie goes to the type listed first.
     return min(candidates, key=lambda candidate: sum(candidate[1].values()))
 
@@ -696,9 +702,9 @@ def generate(template_path, settings_path, config_path, seed):
     except GeneratorError as e:
         raise GeneratorError(settings_path, e.problems) from None
 
-    # Check the drawn mission against both preconditions before anything is
-    # written. The geofence check is skipped for a mission without one.
-    # PLACEHOLDER: preconditions.tasks (plan_exists) waits for the plan step.
+    # Check the drawn mission against the spacing and geofence preconditions. The
+    # geofence check is skipped for a mission without one. The third, tasks, needs
+    # the filled states, so it comes after them, still before anything is written.
     problems = spacing_problems(waypoints, config["zone"])
     if settings["geofence"] is not None:
         problems += geofence_problems(waypoints, settings["geofence"], config)
@@ -720,6 +726,23 @@ def generate(template_path, settings_path, config_path, seed):
     for name, visited in (("start", False), ("goal", True)):
         _fill(states[name], waypoints, config["vehicle"], visited)
         result[name] = ET.ElementTree(states[name])
+
+    # preconditions.tasks (every_change_has_a_task): the plan step must find a plan
+    # for these states. It is the plan that gets flown; `python -m plan_step` writes
+    # the same one as mission.plan.
+    try:
+        plan_mission(
+            result["start"],
+            result["goal"],
+            settings["raw"],
+            load_plan_config(config_path),
+        )
+    except NoPlan as e:
+        raise GeneratorError(settings_path, [f"the mission has no plan: {e}"]) from None
+    except PlanError as e:  # NotSupported, or states the plan step can't read
+        raise GeneratorError(
+            settings_path, [f"the plan step can't plan this mission: {e}"]
+        ) from None
     return result
 
 

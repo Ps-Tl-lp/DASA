@@ -1,0 +1,341 @@
+# PX4 config for the HYDRA demo
+#
+# PX4's names and numbers live in this one file and appear nowhere else; the generator, the
+# mission settings and the states stay platform-neutral. Each section header names who reads it.
+# Reasoning, evidence and PX4 doc links: docs/px4-mappings.md ("why: section N" points there).
+# Terms: docs/definitions.md. What belongs here, in the mission, or in code: platform_configs/README.md.
+#
+# How values are written. The same rules hold in every section:
+#   2, true, gz_x500    A plain value. Used as written.
+#   tolerances.at_goal.within_m, px4_setup.RTL_RETURN_ALT, base_lat_lon.lat
+#                       A name that starts with a section of this file. Use the value found there.
+#   agent.x, waypoint.z, base.x
+#                       A state property. Use the value from the mission's state.
+#   $hold_s             A value a program fills in. `inputs` has one row per name saying where it comes from.
+#   helper: NAME        A function a builder writes. `helpers` lists every one and who calls it.
+#   rule: SENTENCE      One plain sentence saying what a check must do. No program runs it.
+#   reads: [NAMES]      The readings a check uses. The names come from `readings`.
+#   rate_of: agent.x    A reading's name (from `readings`), not a state property. The same goes
+#                       for the names in `reads`, even where they look like state properties.
+#   every_mission: true A check that runs on every mission, even when the mission settings omit it.
+#   start_state, last_reading, exact
+#                       A keyword. The comment next to it says what it means.
+#   PROPOSED            Not decided yet (docs/testing.md, "Not decided yet").
+#   PLACEHOLDER         Still to do.
+# Positions are metres from the base (0, 0, 0): x north, y east, z up. PX4 uses north, east,
+# down, so a log row flips z (flip_sign). PX4 calls the base "home".
+
+platform: px4
+log_format: ulog # .ulg files. They also record the PX4 parameters the flight used.
+
+# ---- Vehicle types (generator, harness) ------------------------------------------
+# The drones we can launch. The generator flies the least-equipped type that can do the mission
+# (fewest has_* true, ties in list order), and moves to the next type when preconditions.tasks
+# fails. The start state copies the type's has_*; the harness launches its sim_model.
+vehicle_types:
+  multicopter:
+    sim_model: gz_x500
+    has_camera: false
+    has_grippers: false
+  # TRIG_MODE 1 turns PX4's camera trigger on (default off). The harness sets it for this type
+  # only, when PX4 starts. (why: docs/px4-mappings.md section 4)
+  multicopter_camera:
+    sim_model: gz_x500_mono_cam
+    has_camera: true
+    has_grippers: false
+    px4_setup: { TRIG_MODE: 1 }
+
+# ---- PX4 setup (harness) ---------------------------------------------------------
+# PX4 parameters set before every flight; the rest stay at PX4's defaults. Each is already what
+# the pinned PX4 build uses for a multicopter; listing it keeps it fixed if PX4 changes.
+# (why: docs/px4-mappings.md section 3)
+px4_setup:
+  RTL_TYPE: 0          # return straight to the base
+  RTL_LAND_DELAY: 0    # land on arrival
+  RTL_RETURN_ALT: 45   # DEMO FAULT: the return climbs to 45 m, above the 35 m geofence (real value 30)
+  NAV_MC_ALT_RAD: tolerances.at_waypoint.height_within_m # the harness sets the number found there
+  GF_MAX_HOR_DIST: 0   # PX4's geofence off: the verifier checks the geofence instead
+  GF_MAX_VER_DIST: 0
+
+# ---- Preconditions (generator) ---------------------------------------------------
+# The generator only outputs missions that pass every rule here:
+#   global   limits it draws values inside
+#   mission  how a drawn mission's values fit together; a check that doesn't apply passes
+#   tasks    whether the drone can do the mission
+# Mission settings may narrow these, never widen them. Every mission starts with the agent at
+# the base, landed and at rest.
+preconditions:
+  global:
+    allowed_values:
+      agent.vehicle_type: [multicopter, multicopter_camera]
+      waypoint.z: { min: 5 }
+    # A cylinder around the base that every mission's geofence must fit inside. Our own limit.
+    # (why: docs/px4-mappings.md section 3)
+    flight_area:
+      max_distance_m: 200
+      max_height_m: 50
+
+  mission:
+    # Two zones are apart when their centres are more than twice within_m apart sideways, or more
+    # than twice height_within_m apart in height. Every waypoint is also more than twice within_m
+    # sideways from the base.
+    # (why: docs/px4-mappings.md section 4)
+    waypoint_spacing:
+      helper: zones_apart
+      zone: tolerances.at_waypoint
+      rule: no two waypoint zones overlap, and every waypoint is clear of the base
+    # The postcondition of the same name, checked before the flight on every waypoint and on the
+    # climb before the return.
+    stays_in_geofence:
+      helper: inside_geofence
+      return_height_m: px4_setup.RTL_RETURN_ALT
+      clearance_m: tolerances.geofence_clearance_m
+      rule: every waypoint and the return climb are inside the mission's geofence by clearance_m
+
+  tasks:
+    # The plan step itself (see Tasks); the plan it builds is the one flown.
+    every_change_has_a_task:
+      helper: plan_exists
+      rule: the plan step's task list, walked from the start state, meets every task's needs and ends in the goal state
+
+  # Not checked. The harness marks a run where one of them fails INCONCLUSIVE.
+  # (why: docs/px4-mappings.md section 3)
+  assumed: [can_arm, mission_starts]
+
+# ---- Tasks (plan step) -----------------------------------------------------------
+# What we ask the drone to do and what it changes, not the path PX4 takes. The plan step lays
+# them out in a fixed order and checks the list against needs and sets; which gotos, their
+# order and the failure cases are in docs/px4-mappings.md section 4.
+#   needs      true in the state before the task. A value starting agent., waypoint. or base.
+#              is that property in the running state; anything else is used as written.
+#   sets       the change the task makes. A waypoint without clicked_pic counts as false.
+#   plan_item  the .plan item (MAVLink command and frame). null is written for NaN; as param 4
+#              (yaw) it leaves PX4's heading as it is
+#   relies_on  PX4 parameters we don't set that shape how the task flies
+tasks:
+  takeoff:
+    needs: { agent.landed: true, agent.x: base.x, agent.y: base.y } # the item takes off at base_lat_lon
+    sets:  { agent.z: $height, agent.landed: false }
+    plan_item: { command: 22, frame: 3, params: [0, 0, 0, null, base_lat_lon.lat, base_lat_lon.lon, $height] }
+  goto:
+    needs: { agent.landed: false }
+    sets:  { agent.x: waypoint.x, agent.y: waypoint.y, agent.z: waypoint.z, waypoint.visited: true }
+    # param 2: PX4's acceptance radius, where the hold starts (why: docs/px4-mappings.md section 5)
+    plan_item: { command: 16, frame: 3, params: [$hold_s, tolerances.at_waypoint.within_m, 0, null, $wp_lat, $wp_lon, waypoint.z] }
+  return_home:
+    needs: { agent.landed: false }
+    sets:  { agent.x: base.x, agent.y: base.y, agent.z: base.z, agent.landed: true, agent.velocity.x: 0, agent.velocity.y: 0, agent.velocity.z: 0 } # landed and at rest
+    plan_item: { command: 20, frame: 2, params: [0, 0, 0, null, 0, 0, 0] }
+  # Needs a type that sets TRIG_MODE; PX4 runs it when the hold ends.
+  # (why: docs/px4-mappings.md section 4)
+  take_picture:
+    needs: { agent.landed: false, agent.has_camera: true, agent.x: waypoint.x, agent.y: waypoint.y, agent.z: waypoint.z }
+    sets:  { waypoint.clicked_pic: true }
+    plan_item: { command: 203, frame: 2, params: [0, 0, 0, 0, 1, 0, 0] } # param 5 = 1: one picture
+    relies_on: [TRIG_INTERFACE]
+
+# Fields every .plan item also gets.
+plan_item_defaults: { type: SimpleItem, autoContinue: true, AltitudeMode: 1, AMSLAltAboveTerrain: null, doJumpId: $index, Altitude: $item_height }
+
+# The .plan file outside `items` is copied from this plan, except plannedHomePosition, which the
+# plan step writes from base_lat_lon.
+plan_template: missions/simple.plan # from the repo root
+
+# Where the simulator starts the drone (quick-setup's PX4_HOME_*). alt: metres above sea level.
+base_lat_lon: { lat: 47.397971057728974, lon: 8.546163739800146, alt: 0 }
+
+# ---- Inputs (plan step) ----------------------------------------------------------
+# Where each $ value comes from. `from` is one of:
+#   postcondition  the mission's postcondition `name` for this waypoint: its `field`, else `default`
+#   first_goto     the first goto in the plan
+#   waypoint       this waypoint's position through the helper; `output` picks one of its `returns`
+#   item           the plan item being written
+inputs:
+  $height:      { from: first_goto, value: waypoint.z } # takeoff climbs to the first waypoint's height
+  $hold_s:      { from: postcondition, name: hold_at, field: min_s, default: 0 }
+  $wp_lat:      { from: waypoint, helper: metres_to_lat_lon, output: lat }
+  $wp_lon:      { from: waypoint, helper: metres_to_lat_lon, output: lon }
+  $index:       { from: item, value: position_in_plan } # 1 for the first item
+  $item_height: { from: item, value: param_7 } # 0 for return_home
+
+# ---- Readings (log reader) -------------------------------------------------------
+# Everything we read about the flight, as timed values. The log reader makes them from the
+# harness's Gazebo recording and the PX4 log, without the mission. The sections after this one
+# work only from the readings.
+#   source          gz_pose: the recording of sim.pose_topic, made outside PX4. log: PX4's .ulg.
+#   rate_of         velocity: the change in that reading since the one before, over the time
+#                   between them; the first reading's is 0
+#   on_ground_m, still_below_m_s
+#                   landed: no higher than on_ground_m above the start, and slower than still_below_m_s
+#   subtract_first  subtract the first value the readings cover, so positions are measured
+#                   from the base
+#   flip_sign       multiply by -1 (PX4's z points down)
+# Times are seconds from the earliest sample of time_zero_topics. The readings run from the log's
+# first logged position to its last. Recording format and clock: docs/px4-mappings.md section 1.
+readings:
+  agent.x:          { source: gz_pose, field: north, subtract_first: true }
+  agent.y:          { source: gz_pose, field: east,  subtract_first: true }
+  agent.z:          { source: gz_pose, field: up,    subtract_first: true }
+  agent.velocity.x: { source: gz_pose, rate_of: agent.x }
+  agent.velocity.y: { source: gz_pose, rate_of: agent.y }
+  agent.velocity.z: { source: gz_pose, rate_of: agent.z }
+  agent.landed:     { source: gz_pose, on_ground_m: tolerances.landed.height_m, still_below_m_s: tolerances.landed.speed_m_s }
+  # Not part of the state:
+  nav_state:        { source: log, topic: vehicle_status, field: nav_state } # PX4's flight mode, about every 0.5 s and on each change
+  disarm_reason:    { source: log, topic: vehicle_status, field: latest_disarming_reason }
+  arming_state:     { source: log, topic: vehicle_status, field: arming_state } # 1 disarmed, 2 armed
+  camera_triggered_at: { source: log, topic: camera_capture, field: timestamp } # the topic is missing from the log when nothing triggered
+  camera_trigger_mode: { source: log, parameter: TRIG_MODE } # one value: 0 off, 1 on
+time_zero_topics: [vehicle_local_position_groundtruth, vehicle_land_detected]
+
+# A run with no `recording` key in run.json (flown before the harness recorded, like R02) is
+# read from the log alone with these rows, every logged sample kept, and its readings say so.
+log_only_readings:
+  agent.x:          { source: log, topic: vehicle_local_position_groundtruth, field: x,  subtract_first: true }
+  agent.y:          { source: log, topic: vehicle_local_position_groundtruth, field: y,  subtract_first: true }
+  agent.z:          { source: log, topic: vehicle_local_position_groundtruth, field: z,  subtract_first: true, flip_sign: true }
+  agent.velocity.x: { source: log, topic: vehicle_local_position_groundtruth, field: vx }
+  agent.velocity.y: { source: log, topic: vehicle_local_position_groundtruth, field: vy }
+  agent.velocity.z: { source: log, topic: vehicle_local_position_groundtruth, field: vz, flip_sign: true }
+  agent.landed:     { source: log, topic: vehicle_land_detected, field: landed }
+  nav_state:        { source: log, topic: vehicle_status, field: nav_state }
+  disarm_reason:    { source: log, topic: vehicle_status, field: latest_disarming_reason }
+  arming_state:     { source: log, topic: vehicle_status, field: arming_state }
+  camera_triggered_at: { source: log, topic: camera_capture, field: timestamp }
+  camera_trigger_mode: { source: log, parameter: TRIG_MODE }
+
+# Compares the simulator position PX4 logged with the recording (world frame, before
+# subtract_first). A mismatch, or a named recording that is missing or short, makes the run
+# INCONCLUSIVE; the verifier reports it as evidence_cross_check.
+# (why: docs/px4-mappings.md section 1)
+cross_check:
+  log: { topic: vehicle_local_position_groundtruth, north: x, east: y, down: z }
+  same_time_within_s: tolerances.cross_check_time_s
+  max_difference_m: tolerances.cross_check_m
+  rule: every log sample has a recorded sample at the same time, no more than max_difference_m away, and the pose topic has one publisher
+
+# ---- Checks (verifier) -----------------------------------------------------------
+# Every check runs and reports. Each check's outcomes: docs/px4-mappings.md section 2.
+# The run's verdict is INCONCLUSIVE when cross_check fails. Otherwise one FAIL makes it FAIL, one
+# INCONCLUSIVE makes it INCONCLUSIVE, and it is PASS only when every check passes. A check fails
+# only on something the readings show. A check that turns on something not happening (no visit,
+# no hold) is INCONCLUSIVE when the log is cut short, has a gap over tolerances.log_gap_max_s,
+# or lacks a reading it needs.
+
+# State properties not read from the log. Base and waypoint positions come from the mission.
+not_in_log:
+  agent.vehicle_type: start_state  # the start state's value stands
+  agent.has_camera:   vehicle_type # from the vehicle type's entry above
+  agent.has_grippers: vehicle_type
+
+# State properties worked out from several readings, using the mission's waypoints.
+derived:
+  waypoint.visited:
+    reads: [agent.x, agent.y, agent.z]
+    helper: at_waypoint
+    rule: at the waypoint at any point in the flight
+  waypoint.clicked_pic: # the trigger, not an image
+    reads: [camera_triggered_at, camera_trigger_mode, agent.x, agent.y, agent.z]
+    helper: at_waypoint
+    rule: PX4 triggered the camera while the agent was at the waypoint
+
+# Compares the last reading with the goal state: position by one straight-line distance, speed
+# by one overall speed, and everything else exactly. A property the goal doesn't list isn't
+# compared.
+goal_check:
+  use: last_reading
+  within:
+    - { reads: [agent.x, agent.y, agent.z], max_distance: tolerances.at_goal.within_m }
+    - { reads: [agent.velocity.x, agent.velocity.y, agent.velocity.z], max_speed: tolerances.at_goal.speed_below_m_s }
+  everything_else: exact
+
+# The plan step and verifier read the same mission settings. The checks below say how to judge the flight.
+postconditions:
+  # Uses the precondition's helper on the flown path, with no clearance.
+  # In the mission settings: stays_in_geofence: {max_distance_m: 60, max_height_m: 35} (from the base)
+  stays_in_geofence:
+    reads: [agent.x, agent.y, agent.z]
+    helper: inside_geofence
+    rule: every reading inside the mission's geofence cylinder
+  # A stretch: from the first position reading in the zone in mission mode to the first later
+  # one outside it or out of mission mode (mode = the last nav_state at or before the reading).
+  # A gap over max_gap ends it at the reading before the gap.
+  # M01 settings: hold_at_each_waypoint: {min_s: 5}. Check each waypoint for five seconds.
+  hold_at:
+    reads: [agent.x, agent.y, agent.z, nav_state]
+    helper: at_waypoint
+    in_nav_state: 3 # NAVIGATION_STATE_AUTO_MISSION
+    short_by_at_most: tolerances.hold_short_by_s
+    max_gap: tolerances.log_gap_max_s
+    rule: the longest stretch of readings inside the zone while PX4 is in mission mode lasts at least the mission's hold minus short_by_at_most
+  # The first time at the first waypoint, then the first time after that at the second, and so on.
+  # In the mission settings: visits_in_order: {waypoints: [W1, W2]}
+  visits_in_order:
+    reads: [agent.x, agent.y, agent.z]
+    helper: at_waypoint
+    rule: each waypoint is visited after the one before it
+  # A disarm is arming_state changing to disarmed_state; its reason is the last disarm_reason at
+  # or before it. Touchdown: the first landed reading after the last airborne one. Takeoff: the
+  # first airborne reading.
+  # The verifier checks this on every flight.
+  disarmed_after_landing:
+    every_mission: true
+    reads: [arming_state, disarm_reason, agent.landed]
+    disarmed_state: 1 # ARMING_STATE_DISARMED
+    last_value: 6 # PX4 disarmed itself after landing (7 in PX4 v1.13 to v1.16)
+    relies_on: [COM_DISARM_LAND] # at <= 0 PX4 never disarms after landing
+    rule: the last disarm comes at or after touchdown with reason last_value, none comes between takeoff and touchdown, and the log ends disarmed
+
+# ---- Helpers (generator, plan step, verifier) ------------------------------------
+# Every function this file names. plan_exists and metres_to_lat_lon are in plan_step/.
+# The verifier's at_waypoint and inside_geofence are in hydra_geometry/zones.py, with a
+# zones_apart nothing calls yet; the generator checks spacing and the geofence with its
+# own code. One with two callers should be written once and shared, so the two can't
+# give different answers for a point on a limit. Where the shared code lives is not
+# decided (docs/testing.md, "Not decided yet").
+helpers:
+  zones_apart:       { used_by: [generator], answers: are the waypoint zones clear of each other and of the base }
+  at_waypoint:       { used_by: [verifier], zone: tolerances.at_waypoint, answers: is this position inside this waypoint's zone }
+  inside_geofence:   { used_by: [generator, verifier], answers: is this position inside the mission's geofence }
+  plan_exists:       { used_by: [generator], answers: can the plan step build a plan for this mission } # plan_step/plan.py
+  # Flat earth on PX4's sphere (R = 6371000 m, src/lib/geo/geo.h):
+  #   lat = base lat + degrees(north / R),  lon = base lon + degrees(east / (R cos(base lat)))
+  metres_to_lat_lon: { used_by: [plan_step], returns: [lat, lon], answers: what latitude and longitude is this position } # plan_step/geo.py
+
+# ---- Tolerances (everyone) -------------------------------------------------------
+# Each tolerance is one of two kinds. A requirement is what the mission counts as done; we
+# choose it. A noise allowance is how much correct flights vary; it comes from baseline runs and
+# stays provisional until ADR 0005's first 10-run baseline.
+# Margins, flights and builds: docs/px4-mappings.md section 5.
+tolerances:
+  # The zone around a waypoint: within_m sideways and height_within_m up or down. Every
+  # at_waypoint check and waypoint_spacing use it; PX4 gets it through goto and px4_setup.
+  at_waypoint: # requirement
+    within_m: 2
+    height_within_m: 0.8
+    edge_counts_as_inside: true # a position exactly on a limit is inside
+  at_goal: # requirement: at the goal position, and at rest
+    within_m: 0.5
+    speed_below_m_s: 0.1
+  geofence_clearance_m: 2 # noise allowance: the plan's margin inside the geofence (generator only)
+  hold_short_by_s: 0.25   # noise allowance: how much shorter than the hold a stretch may be
+  log_gap_max_s: 0.2      # noise allowance: the longest gap that doesn't end a stretch; for 4x sim speed only
+  landed: # noise allowances for readings.agent.landed
+    height_m: 0.1
+    speed_m_s: 0.1
+  cross_check_m: 0.0001       # noise allowance: how far PX4's logged position may be from the recording
+  cross_check_time_s: 0.0005  # how close in sim time two samples must be to be the same one
+
+# ---- Simulator (harness, log reader) ---------------------------------------------
+# Where the harness records Gazebo's pose (readings, source gz_pose).
+# Also the setup every tolerance was measured on; another needs its own baseline (ADR 0005).
+# The model comes from vehicle_types.sim_model, home from base_lat_lon.
+sim:
+  simulator: gz          # Gazebo, through PX4's gz_bridge
+  world: default
+  pose_topic: /world/default/pose/info # the topic PX4 logs as vehicle_local_position_groundtruth
+  vehicle_model_prefix: x500 # every vehicle type's sim_model is an x500
+  speed_factor: 4        # PX4_SIM_SPEED_FACTOR
+  headless: true
+  flight_timeout_s: 300  # the harness waits this long for the disarm after the mission starts, then stops the run (reason timeout)
+  px4_build: fca3df865a  # the build the repo pins (ADR 0001)

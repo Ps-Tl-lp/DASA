@@ -1,0 +1,8 @@
+mission_id: M02
+waypoints: 1
+goal:
+  waypoint.visited: true
+  agent_ends: base_landed
+postconditions:
+  hold_at_each_waypoint: {min_s: 5}
+  stays_in_geofence: {max_distance_m: 60, max_height_m: 30}
