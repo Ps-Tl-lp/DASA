@@ -17,7 +17,8 @@ BASE_POSITION = {"x": 0, "y": 0, "z": 0}
 
 # The state properties the M01 fixture README lists for each part of a state.
 # Anything else in the template (no_fly_zone, geofence, dwell_time, visited_at,
-# in_range, ...) is left out of the output.
+# in_range, ...) is left out of the output. vehicle_type goes where the template
+# puts it: on the <agent> tag (the team template) or as a child (the M01 fixture).
 PROPERTIES = {
     "base": AXES,
     "agent": AXES
@@ -34,6 +35,9 @@ ALLOWED_VALUE_KEYS = ("agent.vehicle_type", "waypoint.z")
 SUPPORTED_GOAL = {"waypoint.visited": True, "agent_ends": "base_landed"}
 
 MAX_DRAWS = 1000  # tries per waypoint before the settings are reported as not fitting
+
+# The id each part gets when the template leaves it blank.
+DEFAULT_IDS = {"start": "S1", "goal": "Sg", "agent": "A1", "base": "B1"}
 
 
 class GeneratorError(Exception):
@@ -475,8 +479,8 @@ def load_states(template_path):
     """Return {"start": env, "goal": env}, checked copies of the two templates.
 
     A <mission> uses its first and last <env>, a single <env> is used for both.
-    Each copy keeps only the properties in PROPERTIES, so the input is never
-    changed.
+    Each copy keeps only the properties in PROPERTIES, and has its ids filled
+    by _link_ids, so the input is never changed.
     """
     parser = ET.XMLParser(target=ET.TreeBuilder(insert_comments=True))
     try:
@@ -486,30 +490,82 @@ def load_states(template_path):
 
     if root.tag == "env":
         # One template for both states: check and clean it once, then copy it,
-        # so the goal can be filled without changing the start.
+        # so the goal can be filled without changing the start. Its id, if it
+        # has one, is the start's, and the goal gets its own.
         start, problems = _checked_copy(root, "env")
-        if problems:
-            raise GeneratorError(template_path, problems)
-        return {"start": start, "goal": copy.deepcopy(start)}
-    if root.tag != "mission":
+        goal = copy.deepcopy(start)
+        goal.set("id", "")
+    elif root.tag == "mission":
+        envs = root.findall("env")  # direct children only, not nested <env>s
+        if len(envs) < 2:
+            raise GeneratorError(
+                template_path,
+                [f"<mission> has {len(envs)} <env>, expected at least two"],
+            )
+        # PLACEHOLDER: the start and goal states are chosen by position (the
+        # first and last <env>), not by id, until the team confirms.
+        start, start_problems = _checked_copy(envs[0], _label("start", envs[0]))
+        goal, goal_problems = _checked_copy(envs[-1], _label("goal", envs[-1]))
+        problems = start_problems + goal_problems
+    else:
         raise GeneratorError(
             template_path, [f"root is <{root.tag}>, expected <mission> or <env>"]
         )
-
-    envs = root.findall("env")  # direct children only, not nested <env>s
-    if len(envs) < 2:
-        raise GeneratorError(
-            template_path,
-            [f"<mission> has {len(envs)} <env>, expected at least two"],
-        )
-    # PLACEHOLDER: the start and goal states are chosen by position (the first
-    # and last <env>), not by id, until the team confirms.
-    start, start_problems = _checked_copy(envs[0], _label("start", envs[0]))
-    goal, goal_problems = _checked_copy(envs[-1], _label("goal", envs[-1]))
-    problems = start_problems + goal_problems
+    if not problems:
+        problems = _link_ids(start, goal)
     if problems:
         raise GeneratorError(template_path, problems)
     return {"start": start, "goal": goal}
+
+
+def _blank(value):
+    return value is None or not value.strip()
+
+
+def _link_ids(start, goal):
+    """Fill the blank ids in both states, and return what doesn't match.
+
+    The two states get distinct ids. The agent and the base each have one id
+    in both, and the agent's base attribute names the base's id. Its
+    no_fly_zone attribute is dropped, since no <no_fly_zone> is written. An id
+    the template supplies is kept.
+    """
+    states = {"start": start, "goal": goal}
+    found = {"agent": [], "base": []}
+    for role, env in states.items():
+        agent = env.find("agent")
+        found["agent"].append((f"the {role} state's <agent id>", agent.get("id")))
+        found["base"].append(
+            (f"the {role} state's <base id>", env.find("base").get("id"))
+        )
+        found["base"].append((f"the {role} state's <agent base>", agent.get("base")))
+
+    problems = []
+    ids = {}
+    for part, supplied in found.items():
+        given = [(where, value) for where, value in supplied if not _blank(value)]
+        if len({value for _, value in given}) > 1:
+            listed = ", ".join(f"{where} is {value!r}" for where, value in given)
+            problems.append(f"the {part} needs one id in both states, but {listed}")
+        ids[part] = given[0][1] if given else DEFAULT_IDS[part]
+    for role, env in states.items():
+        ids[role] = DEFAULT_IDS[role] if _blank(env.get("id")) else env.get("id")
+    if ids["start"] == ids["goal"]:
+        problems.append(
+            f"the start and goal states both have id {ids['start']!r}, but need "
+            "distinct ids"
+        )
+    if problems:
+        return problems
+
+    for role, env in states.items():
+        env.set("id", ids[role])
+        env.find("base").set("id", ids["base"])
+        agent = env.find("agent")
+        agent.set("id", ids["agent"])
+        agent.set("base", ids["base"])
+        agent.attrib.pop("no_fly_zone", None)
+    return problems
 
 
 def _checked_copy(template, label):
@@ -561,6 +617,13 @@ def _shape(env):
         _keep_only(part, properties)
         for prop in properties:
             children = part.findall(prop)
+            if prop == "vehicle_type" and prop in part.attrib:
+                # vehicle_type on the <agent> tag, as the team template has it.
+                if children:
+                    problems.append(
+                        f"{where} has a {prop} attribute and a <{prop}>, expected one"
+                    )
+                continue
             if len(children) != 1:
                 problems.append(f"{where} has {len(children)} <{prop}>, expected one")
                 continue
@@ -594,7 +657,10 @@ def _fill(env, waypoints, vehicle, visited):
         agent.find(axis).set("value", str(BASE_POSITION[axis]))
         velocity.find(axis).set("value", "0")
     agent.find("landed").set("value", "true")
-    agent.find("vehicle_type").set("value", vehicle_name)
+    if "vehicle_type" in agent.attrib:
+        agent.set("vehicle_type", vehicle_name)  # the team template's <agent> tag
+    else:
+        agent.find("vehicle_type").set("value", vehicle_name)  # the M01 fixture's
     for flag in EQUIPMENT:
         agent.find(flag).set("value", _bool(flags[flag]))
 
@@ -662,7 +728,7 @@ def to_xml(tree):
 
 
 class _MissionDumper(yaml.SafeDumper):
-    """Writes mission.yaml the way the M01 fixture does.
+    """Serialize mission metadata in the M01 fixture's format.
 
     List items are indented under their key, and each postcondition's fields
     are on one line, as in `- hold_at: {waypoint: W1, min_s: 5}`.
@@ -696,15 +762,13 @@ def to_yaml(mission):
 
 
 def write_outputs(result, output_dir, inputs):
-    """Write mission.yaml, start.xml and goal.xml to output_dir.
+    """Write start.xml and goal.xml to output_dir.
 
     Refuses, before writing anything, an output path that is one of inputs.
-    Each file is written to a temporary name first and only renamed once all
-    three are written, so a failed write leaves no partial bundle.
+    Both files are written to temporary names before either is renamed.
     """
     output_dir = Path(output_dir)
     texts = {
-        "mission.yaml": to_yaml(result["mission"]),
         "start.xml": to_xml(result["start"]),
         "goal.xml": to_xml(result["goal"]),
     }
@@ -736,7 +800,7 @@ def write_outputs(result, output_dir, inputs):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(
-        description="Generate mission.yaml, start.xml and goal.xml for one mission."
+        description="Generate start.xml and goal.xml for one mission."
     )
     parser.add_argument("template", type=Path, help="environment template (XML)")
     parser.add_argument("settings", type=Path, help="mission settings (simple.yaml)")
@@ -746,7 +810,7 @@ def main(argv=None):
         "--output-dir",
         type=Path,
         default=Path("."),
-        help="directory for the three files (default: current directory)",
+        help="directory for the state files (default: current directory)",
     )
     args = parser.parse_args(argv)
 
