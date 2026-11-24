@@ -22,7 +22,7 @@ from pathlib import Path
 
 import yaml
 
-from .cross_check import cross_check
+from .cross_check import INCONCLUSIVE, PASS, cross_check
 from .recording import Recording
 from .ulog import Log, MissingField
 
@@ -104,7 +104,17 @@ def read_run(run_folder, config=None):
     except MissingField as error:
         raise ReaderError(str(error)) from error
 
-    return _assemble(run, rows, readings, missing_topics, time_zero_us, recorded, cross)
+    if log.problem and cross is not None:
+        # Samples that survived the damage can still match the recording, but they
+        # can't vouch for the part pyulog skipped.
+        reason = f"{log.problem}, so it can't be checked against the recording"
+        if cross["verdict"] != PASS:
+            reason += f"; {cross['reason']}"
+        cross.update(verdict=INCONCLUSIVE, reason=reason)
+
+    return _assemble(
+        run, rows, readings, missing_topics, time_zero_us, recorded, cross, log.problem
+    )
 
 
 # ---- Log rows ------------------------------------------------------------------------
@@ -211,7 +221,9 @@ def landed(height, speeds, on_ground_m, still_below_m_s):
 # ---- readings.json -------------------------------------------------------------------
 
 
-def _assemble(run, rows, readings, missing_topics, time_zero_us, recorded, cross):
+def _assemble(
+    run, rows, readings, missing_topics, time_zero_us, recorded, cross, log_problem
+):
     out = {key: run[key] for key in ("mission_id", "run_id", "run_status")}
     if run.get("reason"):
         out["reason"] = run["reason"]
@@ -253,6 +265,8 @@ def _assemble(run, rows, readings, missing_topics, time_zero_us, recorded, cross
         else:
             out[key] = [{"t_s": seconds(t), "value": v} for t, v in value]
 
+    if log_problem:
+        out["log_problem"] = log_problem
     out["missing_topics"] = missing_topics
     out["sources"] = (
         {name: row["source"] for name, row in rows.items()} if recorded else "log only"
