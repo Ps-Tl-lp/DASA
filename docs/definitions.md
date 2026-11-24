@@ -9,9 +9,9 @@ What we mean by these words across the repo. If one doesn't match how you use it
 | State | The environment with every property's value filled in, at one moment. |
 | Start state | The state when the mission begins. |
 | Goal state | The state we expect when the mission is done. Same properties as the start state. Only what the mission changes is different. |
-| Mission | For this demo, one start state and one goal state, shown as two XML files on the board. Requirements the two states can't show, such as hold time and waypoint order, are the mission's postconditions and travel with it. |
+| Mission | For this demo, one start state and one goal state, shown as two XML files on the board. Requirements the two states can't show, such as hold time and waypoint order, are postconditions. The mission settings give their values. |
 | Base | Where the agent launches and lands, and the origin (0, 0, 0) for its coordinates. The demo assumes the agent starts there. PX4 calls it home. |
-| Generator | Draws values for the properties allowed to vary and keeps only missions that pass the preconditions. What it produces is a start state, a goal state and the mission's postconditions with their values filled in. Settings include the number of waypoints. |
+| Generator | Reads the environment template, platform config and mission settings. It picks values for the states and writes two files: `start.xml` and `goal.xml`. |
 | Precondition | A rule a mission must pass to be accomplishable. The generator only outputs missions that pass. Some are a single limit, like maximum height. Others need several values together, like waypoint spacing. They live in the platform config, not in the mission. |
 | Accomplishable | The platform could complete the mission. A mission that breaks a precondition is never flown. Passing our checks only rules out the problems they cover. |
 | Postcondition | A condition for success that the goal state can't show, because it's about the whole flight. Example: the drone never left the geofence. It must be checkable from what a run records: the log, and the harness's Gazebo recording. |
@@ -34,15 +34,15 @@ What we mean by these words across the repo. If one doesn't match how you use it
 | Noise allowance | A tolerance that absorbs how much correct flights of the unmodified PX4 vary, such as how much shorter than the hold a stretch may read. Set only from baseline runs (ADR 0005). |
 | Reading | A value read from the log or from the harness's Gazebo recording, over the whole flight. Each reading names its source in `platform_configs/px4.yaml`. The verifier works from readings and never opens either file. |
 | Vehicle type | A drone we can launch, with what it's fitted with (camera, grippers). Listed in `px4.yaml`. The generator flies the least-equipped one that can do the mission, and the start state copies its equipment. |
-| Mission settings | What kind of mission to generate: how many waypoints, which properties change, any narrower ranges. Platform-neutral, kept with the generator. Can narrow `px4.yaml`'s ranges, never widen them. |
+| Mission settings | What kind of mission to generate: how many waypoints, which properties change, any narrower ranges, and what to check during the flight (for example, a five-second hold at each waypoint). Platform-neutral, kept with the generator. Can narrow `px4.yaml`'s ranges, never widen them. |
 | No-fly zone | An area the drone must stay out of. Dropped for the demo (Nov 21). A rule, not a solid obstacle. |
 | Task | What we ask the drone to do, such as go to waypoint A. Tasks go in the plan. |
 | Action | How the drone does a task: fly, turn, climb. That's PX4's job. We only say what each task changes, not the path PX4 takes to do it. Takeoff, go to waypoint and return home are tasks, not actions. |
 | Mission plan | The QGroundControl `.plan` file the plan step produces from the mission. |
-| Plan step | The program that turns a mission into a mission plan. "Plan translator" on the board. |
+| Plan step | Reads the two states and uses the holds and waypoint order in the mission settings to build a flight plan. "Plan translator" on the board. |
 | Mapping | How to get a property's value from the available evidence. Some mappings use one log field, others use the flown path. |
 | Log reader | Turns the platform's log and the harness's Gazebo recording into timed readings, and checks the log's ground truth against the recording. It doesn't need the mission and judges nothing. |
-| Verifier | Checks the goal and postconditions against the readings and the mission. Each requirement gets PASS, FAIL or INCONCLUSIVE. Use INCONCLUSIVE when the readings cannot decide it. |
+| Verifier | Reads both states and the same settings the plan step used. It checks the goal and postconditions against the flight readings. Each requirement gets PASS, FAIL or INCONCLUSIVE. Use INCONCLUSIVE when the readings cannot decide it. |
 | Validate | Show that the verifier gives the right answer on runs whose answer we already know. This is a working meaning and still open. |
 
 ## Words that are easy to mix up
