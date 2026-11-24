@@ -13,7 +13,8 @@ Start with the [README quickstart](README.md#quickstart). Beyond it:
 - Python 3.12 or newer. CI runs 3.12. On Windows, work inside WSL2 Ubuntu.
 - Dev dependencies (pytest and ruff) are pinned to exact versions in [`requirements-dev.txt`](requirements-dev.txt) and installed into `.venv`. Tool settings are in [`pyproject.toml`](pyproject.toml). There is no lock file yet.
 - Adding or upgrading a dependency is ask-first (see `AGENTS.md`) and goes in its own `chore/` PR.
-- No environment variables, secrets, or local services are needed yet. A PR that adds one documents it here, with how to get its value, and commits only a `.env.example`.
+- No environment variables, secrets, or local services are needed for local work. A PR that adds one documents it here, with how to get its value, and commits only a `.env.example`.
+- The repo has one GitHub Actions secret, `CLAUDE_CODE_OAUTH_TOKEN`, used by `.github/workflows/claude.yml` so team members can mention `@claude` in issues and PRs. A repo admin first installs the [Claude GitHub App](https://github.com/apps/claude) with access to this repository, then creates the token with `claude setup-token` and adds it under Settings → Secrets and variables → Actions. Runs bill the account that owns the token. `@codex review` on a PR needs no secret: it is turned on per repo in Codex settings. Both are advisory, like Copilot, and never replace a teammate's approval.
 - The checks below don't need PX4. Flying missions does: install it with quick-setup as [ADR 0001](docs/adr/0001-dev-environment.md) describes.
 
 ## Local checks
