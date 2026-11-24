@@ -294,11 +294,11 @@ def test_readings_text_has_one_line_per_timed_value_and_round_trips(tmp_path):
 
 
 def test_command_line_writes_readings_json(tmp_path, capsys):
-    folder = _run(tmp_path, LOG_ONLY_TOPICS)
+    folder = _run(tmp_path, LOG_ONLY_TOPICS, record={"speed": 4, "seed": 42})
     assert main([str(folder)]) == 0
-    assert (
-        json.loads((folder / "readings.json").read_text())["time_zero_us"] == 1_000_000
-    )
+    output = json.loads((folder / "readings.json").read_text())
+    assert output["record"] == {"speed": 4}
+    assert output["time_zero_us"] == 1_000_000
 
 
 def test_command_line_says_why_a_run_cant_be_read(capsys):

@@ -216,6 +216,16 @@ def _assemble(run, rows, readings, missing_topics, time_zero_us, recorded, cross
     if run.get("reason"):
         out["reason"] = run["reason"]
 
+    record = run.get("record")
+    if isinstance(record, dict):
+        setup = {
+            key: record[key]
+            for key in ("px4_commit", "simulator", "speed")
+            if key in record
+        }
+        if setup:
+            out["record"] = setup
+
     def seconds(t_us):
         return round((t_us - time_zero_us) / 1e6, TIME_DECIMALS)
 
