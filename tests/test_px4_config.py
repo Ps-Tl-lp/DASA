@@ -155,7 +155,13 @@ def test_every_reading_names_its_source():
         for name, row in CONFIG[section].items():
             assert row["source"] in {"gz_pose", "log"}, (section, name)
             if row["source"] == "log":
-                assert row["topic"] and row["field"], (section, name)
+                # a timed topic field, or one value from the log's parameters
+                assert (row.get("topic") and row.get("field")) or row.get(
+                    "parameter"
+                ), (
+                    section,
+                    name,
+                )
             else:
                 ways = {"field", "rate_of", "on_ground_m"} & set(row)
                 assert len(ways) == 1, (section, name)
@@ -201,6 +207,15 @@ def test_every_task_has_needs_and_sets_on_state_properties():
             assert task[part], (name, part)
             for prop in task[part]:
                 assert prop.split(".")[0] in {"agent", "waypoint", "base"}, (name, prop)
+
+
+def test_a_log_gap_and_the_simulator_setup_are_named():
+    assert CONFIG["postconditions"]["hold_at"]["max_gap"] == "tolerances.log_gap_max_s"
+    assert 0 < lookup("tolerances.log_gap_max_s") < 1
+    sim = CONFIG["sim"]
+    assert isinstance(sim["speed_factor"], (int, float)) and sim["speed_factor"] > 0
+    assert isinstance(sim["px4_build"], str) and sim["px4_build"]
+    assert sim["simulator"] and isinstance(sim["headless"], bool)
 
 
 def test_px4_gets_the_same_waypoint_zone_as_the_checks():

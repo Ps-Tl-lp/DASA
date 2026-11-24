@@ -58,23 +58,17 @@ Log contents:
 
 This list is the one place open decisions are tracked. Until one is decided, code or a test that depends on it gets a clearly marked placeholder (a comment starting `PLACEHOLDER:` that names the open decision), and the PR lists it. Don't pick a value or rule silently.
 
-- Tolerance values, and where they are defined. ADR 0004 proposes `platform_configs/px4.yaml`, and every value marked `PROPOSED` there is still open.
 - How to show a picture was taken, not just that PX4 triggered the camera.
 - What evidence can show a collision. The log can't; the simulator's contact record can.
-- The never-lands rule: when a log that ends airborne counts as FAIL rather than INCONCLUSIVE.
-- The RTL timing rule.
-- What a gap in the log does to the hold check. `docs/px4-mappings.md` section 5 has a proposal.
+- The never-lands rule: when a log that ends airborne counts as FAIL rather than INCONCLUSIVE. Today it is INCONCLUSIVE (`disarmed_after_landing` sees no disarm after touchdown). A FAIL needs a harness time limit that says the flight had its chance.
 - How to judge the evidence PX4 reports about itself (flight mode, disarm reason, camera trigger) when the autopilot is modified. Position, velocity and `landed` come from the harness's Gazebo recording and no longer depend on PX4, but in PX4's Docker image PX4 still starts Gazebo and runs beside the recorder (a follow-up: Gazebo in its own container).
-- How the checks combine into one verdict for a run. (When a log counts as a complete flight is decided: `disarmed_after_landing` in `platform_configs/px4.yaml`.)
-- Fixture format (trimmed `.ulg` or extracted traces) and how they're produced. Fixtures come with the "Validate the verifier" work. `tests/fixtures/m01/` is a first one, using extracted readings as JSON; its format is a first guess.
-- The verifier's language and libraries, command line and report format ("Implement verifier" card).
+- The verifier's language and libraries, and its command line ("Implement verifier" card). Its report format is in `tests/fixtures/m01/README.md` (`verdict.json`).
 - Whether testers also stay out of the verifier's code, and who reviews verifier PRs.
-- Which simulator the baseline runs use. The sample logs are Gazebo `x500`; quick-setup also runs SIH.
 - Whether a mission should test PX4's own geofence. It is off in every flight today (`px4_setup`), so a variant that breaks it would go unnoticed.
 - Where the shared helper functions live. `platform_configs/px4.yaml` lists them under `helpers`; none is written yet.
 - Whether CI on recorded logs meets the course's Research CI gate ([Repo Checkpoints](https://capstone.alexulbrich.com/assignments/repo-checkpoints/#what-ci-must-do)). To ask the TA.
 
-The verifier plan lays out options for the tolerances, RTL timing and never-lands questions, and lists some of them as questions for Manish. Record a decision that is expensive to reverse (tolerances, the report format, which simulator the baseline uses) in an ADR (`docs/adr/`); record smaller ones in the document that owns them. Either way, remove it from this list.
+The verifier plan lays out options for the never-lands question, and lists some of them as questions for Manish. Tolerances (ADR 0005) and the baseline simulator (`sim` in `platform_configs/px4.yaml`) are decided; the RTL timing rule was dropped, because `goal_check` covers the return under the Oct 30 approach. Record a decision that is expensive to reverse (tolerances, the report format, which simulator the baseline uses) in an ADR (`docs/adr/`); record smaller ones in the document that owns them. Either way, remove it from this list.
 
 ## Not adopted yet
 

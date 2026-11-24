@@ -19,5 +19,9 @@ Proposed: preconditions, task-to-plan mappings, log readings and tolerances for 
 ## Consequences
 
 - `platform_configs/` is a new top-level folder.
-- If accepted, where tolerances are defined is settled. Their values are not: anything marked `PROPOSED` in the file still needs a decision and stays on the list in `docs/testing.md`.
+- If accepted, where tolerances are defined is settled. Their values are not: anything marked `PROPOSED` in the file still needs a decision and stays on the list in `docs/testing.md`. (Since ADR 0005, none remain.)
 - Another platform needs its own config, plus its own plan writer and log reader if its plan or log format differs.
+
+## Revisit
+
+Before a second platform, or when verifier code lands on main, move the platform-neutral parts of `px4.yaml` into a neutral checks file, with one binding file per platform. Those parts are `goal_check`, `derived`, the postcondition rules, `helpers` and `needs`/`sets`. Add a test that every task and reading is defined, or marked unsupported, in each binding. Deferred on 2026-11-23: nothing breaks before then, and the split needs its own ADR. QGroundControl and Aerostack2 both show the first platform quietly becoming the baseline when the shared rules live in its file.

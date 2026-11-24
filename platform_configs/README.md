@@ -2,7 +2,7 @@
 
 One file per platform. `px4.yaml` is the only one so far. It holds everything PX4-specific the pipeline needs: which drones exist, the rules a generated mission has to pass, how a task becomes a `.plan` item, what to read from the log, and how the readings are judged.
 
-Values marked `PROPOSED` in the file are not decided yet. They are tracked in [docs/testing.md](../docs/testing.md#not-decided-yet).
+A value marked `PROPOSED` in the file is not decided yet; none is at the moment. They are tracked in [docs/testing.md](../docs/testing.md#not-decided-yet). Each tolerance says whether it is a requirement or a noise allowance, and what evidence is behind it ([ADR 0005](../docs/adr/0005-tolerance-values.md)).
 
 ## Who uses which part
 
@@ -14,7 +14,7 @@ Values marked `PROPOSED` in the file are not decided yet. They are tracked in [d
 | `base_lat_lon` | Plan step, harness | Where the base is on the map |
 | `readings`, `time_zero_topics` | Log reader | What we read from the harness's Gazebo recording and from the log, each row naming its source |
 | `log_only_readings`, `cross_check` | Log reader | A run with no recording, and the log's ground truth checked against the recording |
-| `sim` | Harness, log reader | Where Gazebo's pose is recorded |
+| `sim` | Harness, log reader | The simulator setup the tolerances were measured on, and where Gazebo's pose is recorded |
 | `not_in_log`, `derived`, `goal_check`, `postconditions` | Verifier | How the readings are judged against the goal state and the postconditions |
 | `helpers` | Whoever builds one | Every function the config names, who calls it and what it answers |
 | `tolerances` | All of them | The shared numbers |
@@ -41,7 +41,7 @@ The top of `px4.yaml` lists how values are written. `tests/test_px4_config.py` c
 2. It checks the drawn mission (waypoint spacing, the geofence) and asks the plan step to build its plan. If anything fails, it draws again. The plan built for this check is the plan that gets flown.
 3. The plan step builds the task list in a fixed order (takeoff, a goto for each waypoint that changes, each picture straight after its goto, return home), checks it against the tasks' `needs` and `sets` from the start state to the goal state, and writes the `.plan` file. The two states can't show a hold or an order, so it reads both from the mission settings.
 4. The harness sets PX4 up (`px4_setup`), launches the vehicle type's `sim_model` in Gazebo, records Gazebo's pose of the vehicle (`sim.pose_topic`), flies the plan and saves the `.ulg` log.
-5. The log reader turns the recording and the log into `readings`, each sample with its time, and checks the log's ground truth against the recording (`cross_check`). That is all it does. It doesn't need the mission.
+5. The log reader turns the recording and the log into `readings`, each sample with its time, and checks the log's ground truth against the recording (`cross_check`). It also copies the PX4 build, simulator and simulation speed from `run.json` into `readings.json` for the verifier.
 6. The verifier does all the judging. It works out `visited` and `clicked_pic` from the readings and the mission's waypoints, compares the end of the flight with the goal state, and checks each of the mission's postconditions, using the values from the same settings file the plan step read: PASS, FAIL or INCONCLUSIVE.
 
 ## Related
