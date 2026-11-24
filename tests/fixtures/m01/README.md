@@ -63,7 +63,7 @@ The environment file on the `env-rep` branch (`docs/environment/environment_repr
   - `landed`, `nav_state`, `disarm_reason` and `arming_state`: lists of `{t_s, value}`, with `landed` a boolean and the others integers;
   - `camera_triggered_at`: a list of `{t_s}`;
   - `camera_trigger_mode`: one value, the `TRIG_MODE` the log records (0 off, 1 on).
-- **Rounding:** times to 3 decimals, positions and velocities to 4.
+- **Rounding:** times to 3 decimals, positions and velocities to 4. A value the log or recording stored as NaN (not a number) is written as `null`, because JSON has no NaN.
 - **Time origin:** times are seconds from the earliest sample of `time_zero_topics` in the log. `time_zero_us` is that sample's PX4 timestamp, in microseconds, so the log's own clock can be recovered.
 - **Written by the log reader:**
   - `sources`: the string `"log only"` for a run read from the log alone, or an object with one entry per reading naming its source (`gz_pose` or `log`). A schema has to allow both;
