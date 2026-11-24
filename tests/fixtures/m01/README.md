@@ -32,11 +32,10 @@ The zone and tolerances come from `platform_configs/px4.yaml`. R02's log (`R02.u
 
 Times are in seconds, positions in metres from the base (x north, y east, z up) and speeds in m/s. Lists of timed values are sorted by time. Later these sections become JSON Schema files, each with a `fileType` and an integer `version`, rejecting unknown keys and changing only by adding.
 
-**`mission.yaml`**
-- **`mission_id`:** a string.
-- **`start`, `goal`:** the file names of the two states, beside it.
-- **`postconditions`:** a list with one item per postcondition, in the form `platform_configs/px4.yaml` gives next to each check, for example `- hold_at: {waypoint: W1, min_s: 5}`. `disarmed_after_landing` isn't listed, because every mission gets it.
-- **Generated missions** also carry the settings and seed they came from.
+**`simple.yaml`** is the settings file used to generate M01. The plan step and verifier read it alongside `start.xml` and `goal.xml`.
+- `mission_id` ties these settings to the run records. For this fixture it is `M01`.
+- `waypoints` and `goal` say how many waypoints to create and where the drone should finish.
+- `postconditions.hold_at_each_waypoint.min_s` sets the hold time for each waypoint. Here it is five seconds at W1. The plan step uses that time to build the plan, and the verifier uses it to check the readings.
 
 **`start.xml`, `goal.xml`:** every property of the base, the agent and each waypoint, with its type and unit:
 - **Base:** `x`, `y`, `z`.
