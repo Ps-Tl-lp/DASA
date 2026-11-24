@@ -73,7 +73,7 @@ Source: verifier plan, "Starting suggestions"; [ADR 0003](adr/0003-independent-v
  
 | Input | Contract |
 |-------|----------|
-| Mission | A start state, a goal state and its postconditions (see [Data model](#data-model)). Preconditions are in the platform config, not the mission. The file format is not decided yet. |
+| Mission | The generator writes `start.xml` and `goal.xml`. The plan step and verifier read those files and the original mission settings, which contain the requested holds, waypoint order or geofence. The generator reads preconditions from the platform config. |
 | Run | The PX4 flight log (`.ulg`) from the simulation. Which fields give evidence for each part of the state comes with the mapping write-up. |
 | Mappings | Log parameters → parts of the goal state, each with a one-line reason. The format is pending; on Oct 28 the team proposed a declarative YAML spec. |
  

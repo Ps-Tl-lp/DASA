@@ -17,7 +17,7 @@
 #   reads: [NAMES]      The readings a check uses. The names come from `readings`.
 #   rate_of: agent.x    A reading's name (from `readings`), not a state property. The same goes
 #                       for the names in `reads`, even where they look like state properties.
-#   every_mission: true A check that runs on every mission, whether its mission.yaml lists it or not.
+#   every_mission: true A check that runs on every mission, even when the mission settings omit it.
 #   start_state, last_reading, exact
 #                       A keyword. The comment next to it says what it means.
 #   PROPOSED            Not decided yet (docs/testing.md, "Not decided yet").
@@ -241,18 +241,17 @@ goal_check:
     - { reads: [agent.velocity.x, agent.velocity.y, agent.velocity.z], max_speed: tolerances.at_goal.speed_below_m_s }
   everything_else: exact
 
-# Checked against the mission's values, not the plan's. `mission.yaml:` shows how a mission lists each.
-# Those forms are PROPOSED, apart from hold_at's (the M01 fixture's).
+# The plan step and verifier read the same mission settings. The checks below say how to judge the flight.
 postconditions:
   # Uses the precondition's helper on the flown path, with no clearance.
-  # mission.yaml: - stays_in_geofence: {max_distance_m: 60, max_height_m: 35} (from the base)
+  # In the mission settings: stays_in_geofence: {max_distance_m: 60, max_height_m: 35} (from the base)
   stays_in_geofence:
     reads: [agent.x, agent.y, agent.z]
     helper: inside_geofence
     rule: every reading inside the mission's geofence cylinder
   # A stretch: from the first position reading in the zone in mission mode to the first later
   # one outside it or out of mission mode (mode = the last nav_state at or before the reading).
-  # mission.yaml: - hold_at: {waypoint: W1, min_s: 5}
+  # M01 settings: hold_at_each_waypoint: {min_s: 5}. Check each waypoint for five seconds.
   hold_at:
     reads: [agent.x, agent.y, agent.z, nav_state]
     helper: at_waypoint
@@ -260,7 +259,7 @@ postconditions:
     short_by_at_most: tolerances.hold_short_by_s
     rule: the longest stretch of readings inside the zone while PX4 is in mission mode lasts at least the mission's hold minus short_by_at_most
   # The first time at the first waypoint, then the first time after that at the second, and so on.
-  # mission.yaml: - visits_in_order: {waypoints: [W1, W2]}
+  # In the mission settings: visits_in_order: {waypoints: [W1, W2]}
   visits_in_order:
     reads: [agent.x, agent.y, agent.z]
     helper: at_waypoint
@@ -268,7 +267,7 @@ postconditions:
   # A disarm is arming_state changing to disarmed_state; its reason is the last disarm_reason at
   # or before it. Touchdown: the first landed reading after the last airborne one. Takeoff: the
   # first airborne reading.
-  # mission.yaml: not listed (every mission gets it)
+  # The verifier checks this on every flight.
   disarmed_after_landing:
     every_mission: true
     reads: [arming_state, disarm_reason, agent.landed]
