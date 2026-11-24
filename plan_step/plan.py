@@ -28,7 +28,7 @@ import yaml
 
 from .config import REPO_ROOT, follow, is_config_name, load_config
 from .geo import metres_to_lat_lon
-from .states import StateError, read_state, waypoint_ids
+from .states import StateError, missing_properties, read_state, waypoint_ids
 
 # Postconditions in the mission settings that the plan step understands.
 # hold_at_each_waypoint sets every goto's hold time. The plan step has nothing to do for
@@ -82,7 +82,24 @@ class Mission:
             self.goal = read_state(folder / GOAL_FILE)
         except StateError as error:
             raise PlanError(str(error)) from error
+        # A goal that leaves properties out would compare as reached on what is left,
+        # so `<env/>` would look like a mission already done.
+        for file_name, state in ((START_FILE, self.start), (GOAL_FILE, self.goal)):
+            missing = missing_properties(state)
+            if missing:
+                listed = ", ".join(missing[:5])
+                if len(missing) > 5:
+                    listed += f" and {len(missing) - 5} more"
+                raise PlanError(
+                    f"{file_name} leaves out {listed}; every state lists all of the "
+                    "base, the agent and each waypoint"
+                )
         self.waypoints = waypoint_ids(self.start)
+        if waypoint_ids(self.goal) != self.waypoints:
+            raise PlanError(
+                f"{START_FILE} has waypoints {self.waypoints} but {GOAL_FILE} has "
+                f"{waypoint_ids(self.goal)}; both list the same ones"
+            )
         # The same as one (name, fields) per check. hold_at_each_waypoint becomes one
         # hold_at per waypoint, as the generator expands it, because the config's
         # hold_at check and its $hold_s input are per waypoint.
@@ -188,12 +205,18 @@ def build_plan(mission_folder, config=None, *, settings=None):
     home = config["base_lat_lon"]
     plan["mission"]["plannedHomePosition"] = [home["lat"], home["lon"], home["alt"]]
     plan["mission"]["items"] = items
+    try:
+        json.dumps(plan, allow_nan=False)
+    except ValueError as error:
+        raise PlanError(
+            f"the plan would hold a number that isn't finite: {error}"
+        ) from error
     return plan
 
 
 def plan_text(plan):
     """The .plan file's text: two-space JSON, numbers written as QGroundControl does."""
-    return json.dumps(_qgc_numbers(plan), indent=2) + "\n"
+    return json.dumps(_qgc_numbers(plan), indent=2, allow_nan=False) + "\n"
 
 
 def plan_exists(mission_folder, config=None, *, settings=None):
