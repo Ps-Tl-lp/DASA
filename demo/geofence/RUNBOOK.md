@@ -2,7 +2,7 @@
 
 The verifier catching a real fault: the same mission flown twice, once as configured and once with PX4's return height set too high. The generator's precondition and the verifier's postcondition both use the mission's geofence, a 60 m by 35 m cylinder around the base. PX4's own geofence is off (`GF_MAX_*_DIST: 0`); PX4 never sees ours.
 
-It is on `feature/wiring` (#35), which has every piece: the plan step, the log reader, #30's harness with its macOS fixes, and the verifier (#31). Run everything from the repo root with `.venv/bin/python`. To fly on macOS that is Python 3.14 from Homebrew, with system site-packages for Gazebo's bindings, plus pymavlink, protobuf 7.36.2 and `requirements-dev.txt`.
+It runs on `dev`, which has every piece: the plan step, the log reader, #30's harness with its macOS fixes, and the verifier (#31). Run everything from the repo root with `.venv/bin/python`. To fly on macOS that is Python 3.14 from Homebrew, with system site-packages for Gazebo's bindings, plus pymavlink, protobuf 7.36.2 and `requirements-dev.txt`.
 
 ## 1. The precondition (live, instant)
 
@@ -40,7 +40,7 @@ To fly both again, about 2 minutes each, one after another. Each run goes throug
 PX4_DIR=/path/to/PX4-Autopilot demo/geofence/fly_both.sh
 ```
 - The first run copies `demo/geofence/M02` to `runs/M02`, which git ignores, and the runs land in `runs/M02/R01` and `R02`. Delete `runs/M02` to fly from scratch.
-- `fly_locked.py` takes a flight lock and waits for any running PX4 or Gazebo, so two flights never overlap. To share another tool's lock, set `HYDRA_FLIGHT_LOCK` to its lock file. On Gabriel's Mac that's `DASA.worktrees/verifier-console/runs/.harness.lock`.
+- `fly_locked.py` takes a flight lock and waits for any running PX4 or Gazebo, so two flights never overlap. To share another tool's lock, set `HYDRA_FLIGHT_LOCK` to its lock file.
 
 ## Known gaps
 
