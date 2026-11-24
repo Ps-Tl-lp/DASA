@@ -17,7 +17,7 @@ To run part of the suite, give pytest a file (`pytest tests/test_missions.py`) o
 ## Layout
 
 - `tests/`: pytest tests in files named `test_*.py`. Name each test for the behavior it checks, such as `test_mission_ends_with_return_to_launch`.
-- `tests/fixtures/`: small sample data the tests use, committed to git (`m01/` so far; no test reads it yet). Each fixture comes with a note saying where it came from: PX4 commit, simulator, mission plan, and how it was trimmed. Raw `.ulg` files and run results stay out of git; `.gitignore` ignores `*.ulg` everywhere except `tests/fixtures/`.
+- `tests/fixtures/`: small sample data the tests use, committed to git (`m01/` so far; `tests/test_plan_step.py` reads it). Each fixture comes with a note saying where it came from: PX4 commit, simulator, mission plan, and how it was trimmed. Raw `.ulg` files and run results stay out of git; `.gitignore` ignores `*.ulg` everywhere except `tests/fixtures/`.
 - `missions/`: the three mission plans. `tests/test_missions.py` checks each one against its written definition in [missions/README.md](../missions/README.md).
 - `platform_configs/`: the PX4 config. `tests/test_px4_config.py` checks that it loads, that it keeps to its own rules for how values are written (every name it points at exists, every `$` value and helper is listed, every check has a rule and uses readings it defines), and that its tasks and plan item fields match `missions/simple.plan`. It does not check whether the values are right.
 
@@ -65,7 +65,7 @@ This list is the one place open decisions are tracked. Until one is decided, cod
 - The verifier's language and libraries, and its command line ("Implement verifier" card). Its report format is in `tests/fixtures/m01/README.md` (`verdict.json`).
 - Whether testers also stay out of the verifier's code, and who reviews verifier PRs.
 - Whether a mission should test PX4's own geofence. It is off in every flight today (`px4_setup`), so a variant that breaks it would go unnoticed.
-- Where the shared helper functions live. `platform_configs/px4.yaml` lists them under `helpers`; none is written yet.
+- Where the shared helper functions live. `platform_configs/px4.yaml` lists them under `helpers`. The plan step's two, `metres_to_lat_lon` and `plan_exists`, are in `plan_step/`; where the generator's and the verifier's go is still open.
 - Whether CI on recorded logs meets the course's Research CI gate ([Repo Checkpoints](https://capstone.alexulbrich.com/assignments/repo-checkpoints/#what-ci-must-do)). To ask the TA.
 
 The verifier plan lays out options for the never-lands question, and lists some of them as questions for Manish. Tolerances (ADR 0005) and the baseline simulator (`sim` in `platform_configs/px4.yaml`) are decided; the RTL timing rule was dropped, because `goal_check` covers the return under the Oct 30 approach. Record a decision that is expensive to reverse (tolerances, the report format, which simulator the baseline uses) in an ADR (`docs/adr/`); record smaller ones in the document that owns them. Either way, remove it from this list.
