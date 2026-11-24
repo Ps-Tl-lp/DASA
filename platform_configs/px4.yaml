@@ -287,18 +287,17 @@ postconditions:
     rule: the last disarm comes at or after touchdown with reason last_value, none comes between takeoff and touchdown, and the log ends disarmed
 
 # ---- Helpers (generator, plan step, verifier) ------------------------------------
-# Every function this file names. plan_exists and metres_to_lat_lon are in plan_step/;
-# the rest aren't written yet. One with two callers is written once and shared, so the
-# two can't give different answers for a point on a limit. Where the shared code lives
-# is not decided (docs/testing.md, "Not decided yet").
+# Every function this file names; none is written yet. One with two callers is written once and
+# shared, so the two can't give different answers for a point on a limit. Where the shared code
+# lives is not decided (docs/testing.md, "Not decided yet").
 helpers:
   zones_apart:       { used_by: [generator], answers: are the waypoint zones clear of each other and of the base }
   at_waypoint:       { used_by: [verifier], zone: tolerances.at_waypoint, answers: is this position inside this waypoint's zone }
   inside_geofence:   { used_by: [generator, verifier], answers: is this position inside the mission's geofence }
-  plan_exists:       { used_by: [generator], answers: can the plan step build a plan for this mission } # plan_step/plan.py
+  plan_exists:       { used_by: [generator], answers: can the plan step build a plan for this mission } # the plan step itself
   # Flat earth on PX4's sphere (R = 6371000 m, src/lib/geo/geo.h):
   #   lat = base lat + degrees(north / R),  lon = base lon + degrees(east / (R cos(base lat)))
-  metres_to_lat_lon: { used_by: [plan_step], returns: [lat, lon], answers: what latitude and longitude is this position } # plan_step/geo.py
+  metres_to_lat_lon: { used_by: [plan_step], returns: [lat, lon], answers: what latitude and longitude is this position } # PLACEHOLDER: not written
 
 # ---- Tolerances (everyone) -------------------------------------------------------
 # Each tolerance is one of two kinds. A requirement is what the mission counts as done; we
